@@ -18,7 +18,8 @@ iOS 上的「快捷导航」App：
 - 代码在 `HyperGO/`：`Models/`、`Services/`（定位、Google 地图跳转、路线算法）、`Views/`。
 
 ## 当前状态 / 下一步
-- 代码最初在没有 Xcode 的云端环境写成，**从未编译过**，首次编译可能有小错误，需要修复。
-- 下一步：`brew install xcodegen` → `xcodegen` → 用 `xcodebuild` 在 iPhone 模拟器上编译 → 修复所有错误 → 在模拟器运行并截图确认 → 提交并推送到 GitHub（`dehaohuang/HyperGO`，`main` 分支）。
-- 之后帮用户装到真机：Xcode 登录 Apple ID、Team 选 Personal Team、Bundle ID 改为唯一值（如 `com.dehaohuang.hypergo`）、iPhone 开启开发者模式并信任证书。
+- 2026-11-17：已在本机（Xcode 27.2）用 iPhone 18 Pro 模拟器（iOS 27.2）编译通过，无需改代码，App 能正常启动（首页「地点」+ 地图/路线标签，定位权限提示正常）。
+- 本机没有 Homebrew：xcodegen 2.47.0 是从 GitHub 官方发布页下载的，路径 `~/.local/xcodegen-dl/xcodegen/bin/xcodegen`。`HyperGO/Info.plist` 由 xcodegen 生成，不入库。
+- 编译命令：`xcodebuild -project HyperGO.xcodeproj -scheme HyperGO -destination 'platform=iOS Simulator,name=iPhone 18 Pro' -derivedDataPath build build`
+- 下一步：帮用户装到真机：Xcode 登录 Apple ID、Team 选 Personal Team、Bundle ID 改为唯一值（如 `com.dehaohuang.hypergo`）、iPhone 开启开发者模式并信任证书。
 - 以后可能加的功能：桌面小组件、Siri 快捷指令、地点分组。
