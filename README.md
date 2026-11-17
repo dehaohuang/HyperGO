@@ -1,4 +1,4 @@
-# 快捷导航 QuickNav
+# HyperGO
 
 记录自定义地点，一键用 Google 地图导航；地图上查看所有地点和距离；多选地点自动排出最短路线。
 
@@ -15,14 +15,14 @@
 
 ```bash
 brew install xcodegen
-cd QuickNav
+cd HyperGO
 xcodegen
-open QuickNav.xcodeproj
+open HyperGO.xcodeproj
 ```
 
 1. Xcode → Settings → Accounts，登录你的 Apple ID（免费即可）
-2. 选中 QuickNav target → Signing & Capabilities → Team 选你的「Personal Team」
-3. 把 Bundle Identifier 改成独一无二的，例如 `com.你的名字.quicknav`（也可以改 `project.yml` 里的 `PRODUCT_BUNDLE_IDENTIFIER` 后重新 `xcodegen`）
+2. 选中 HyperGO target → Signing & Capabilities → Team 选你的「Personal Team」
+3. 把 Bundle Identifier 改成独一无二的，例如 `com.你的名字.hypergo`（也可以改 `project.yml` 里的 `PRODUCT_BUNDLE_IDENTIFIER` 后重新 `xcodegen`）
 4. 先选一个模拟器点 ▶ 试试；模拟器里可以在 Features → Location 设置模拟位置
 
 ## 装到自己的 iPhone（免费 Apple ID）

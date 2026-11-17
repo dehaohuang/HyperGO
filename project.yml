@@ -1,4 +1,4 @@
-name: QuickNav
+name: HyperGO
 options:
   bundleIdPrefix: com.example
   deploymentTarget:
@@ -10,15 +10,15 @@ settings:
     MARKETING_VERSION: "1.0"
     CURRENT_PROJECT_VERSION: "1"
 targets:
-  QuickNav:
+  HyperGO:
     type: application
     platform: iOS
     sources:
-      - QuickNav
+      - HyperGO
     info:
-      path: QuickNav/Info.plist
+      path: HyperGO/Info.plist
       properties:
-        CFBundleDisplayName: 快捷导航
+        CFBundleDisplayName: HyperGO
         CFBundleDevelopmentRegion: zh-Hans
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:
@@ -28,7 +28,7 @@ targets:
           - comgooglemaps
     settings:
       base:
-        # 免费 Apple ID 要求 Bundle ID 全球唯一，请改成你自己的，例如 com.你的名字.quicknav
-        PRODUCT_BUNDLE_IDENTIFIER: com.yourname.quicknav
+        # 免费 Apple ID 要求 Bundle ID 全球唯一，请改成你自己的，例如 com.你的名字.hypergo
+        PRODUCT_BUNDLE_IDENTIFIER: com.yourname.hypergo
         CODE_SIGN_STYLE: Automatic
         TARGETED_DEVICE_FAMILY: "1"

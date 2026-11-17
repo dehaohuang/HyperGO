@@ -2,7 +2,7 @@ import SwiftUI
 import SwiftData
 
 @main
-struct QuickNavApp: App {
+struct HyperGOApp: App {
     @State private var locationManager = LocationManager()
 
     var body: some Scene {

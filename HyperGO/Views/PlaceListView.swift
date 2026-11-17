@@ -50,7 +50,7 @@ struct PlaceListView: View {
                     }
                 }
             }
-            .navigationTitle("快捷导航")
+            .navigationTitle("HyperGO")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button { showingSettings = true } label: {
