@@ -28,13 +28,13 @@ enum PlaceGroups {
         order = order.map { $0 == old ? new : $0 }
     }
 
-    /// 按筛选值过滤；筛选的分组已不存在时视为「全部」
+    /// 按筛选值过滤；筛选的分组已被删除（名称不存在）时视为「全部」
+    /// 「未分组」没有地点时返回空列表（不能退回全部，否则会把已分组的地点也显示出来）
     static func filter(_ places: [Place], by filter: String) -> [Place] {
         switch filter {
         case all: return places
         case ungrouped:
-            let matched = places.filter { $0.groupName.isEmpty }
-            return matched.isEmpty ? places : matched
+            return places.filter { $0.groupName.isEmpty }
         default:
             let matched = places.filter { $0.groupName == filter }
             return matched.isEmpty && !names(in: places).contains(filter) ? places : matched
@@ -98,7 +98,7 @@ struct GroupFilterBar: View {
                         }
                         .modifier(ChipDrop(key: g, value: g, targeted: $targeted, onDrop: onDropPlace))
                     }
-                    if ungroupedCount > 0 || onDropPlace != nil {
+                    if ungroupedCount > 0 || onDropPlace != nil || selection == PlaceGroups.ungrouped {
                         GroupChip(title: "未分组", count: ungroupedCount,
                                   selected: current(groups) == PlaceGroups.ungrouped,
                                   targeted: targeted == PlaceGroups.ungrouped) {

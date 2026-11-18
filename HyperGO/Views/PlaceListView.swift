@@ -55,7 +55,13 @@ struct PlaceListView: View {
                                        mode: travelMode)
             }
             .overlay {
-                if places.isEmpty {
+                if !places.isEmpty && visible.isEmpty && groupFilter == PlaceGroups.ungrouped {
+                    ContentUnavailableView {
+                        Label("没有未分组的地点", systemImage: "folder.badge.questionmark")
+                    } description: {
+                        Text("所有地点都已经放进分组了。把地点拖到上面的「未分组」标签上，就能把它移出分组。")
+                    }
+                } else if places.isEmpty {
                     ContentUnavailableView {
                         Label("还没有地点", systemImage: "mappin.slash")
                     } description: {
