@@ -348,9 +348,11 @@ struct GroupManagerView: View {
                         }
                     }
                     .onMove { from, to in
+                        // 只在分组之间调换排序号，不影响它们和首页地点的相对位置
+                        let slots = groups.map(\.sortIndex).sorted()
                         var list = groups
                         list.move(fromOffsets: from, toOffset: to)
-                        for (i, g) in list.enumerated() where g.sortIndex != i { g.sortIndex = i }
+                        for (g, slot) in zip(list, slots) where g.sortIndex != slot { g.sortIndex = slot }
                     }
                 } footer: {
                     Text(groups.isEmpty

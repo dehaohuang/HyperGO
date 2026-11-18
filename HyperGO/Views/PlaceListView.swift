@@ -6,7 +6,6 @@ struct PlaceListView: View {
     var body: some View {
         NavigationStack {
             PlaceBoard(folder: nil)
-                .navigationDestination(for: PlaceGroup.self) { PlaceBoard(folder: $0) }
         }
     }
 }
@@ -40,6 +39,8 @@ struct PlaceBoard: View {
     @State private var dragStart: CGPoint = .zero
     @State private var dragSize: CGSize = .zero
     @State private var dragTranslation: CGSize = .zero
+    /// 手指当前位置（判断经过哪个图标用）
+    @State private var finger: CGPoint = .zero
     /// 拿起时放大；放进文件夹时缩小淡出
     @State private var lifted = false
     @State private var sinking = false
@@ -50,7 +51,9 @@ struct PlaceBoard: View {
     @State private var longPressTime = Date.distantPast
     /// 每个图标、文件夹在网格里的位置
     @State private var tileFrames: [PersistentIdentifier: CGRect] = [:]
-    @State private var folderFrames: [PersistentIdentifier: CGRect] = [:]
+    /// 拖动过程中的顺序（先在内存里换位，动画稳定；松手后再写回数据）
+    @State private var liveOrder: [PersistentIdentifier]?
+    @State private var openFolder: PlaceGroup?
     /// 地点拖到哪个文件夹上方（高亮）
     @State private var targetedFolder: PersistentIdentifier?
     private static let space = "board"
@@ -66,6 +69,36 @@ struct PlaceBoard: View {
         return places.filter { $0.groupName.isEmpty }
     }
     private var folders: [PlaceGroup] { folder == nil ? groups : [] }
+
+    /// 网格里的一格：文件夹或地点。首页两者按同一套排序号混排
+    private enum Item: Identifiable {
+        case folder(PlaceGroup), place(Place)
+        var id: PersistentIdentifier {
+            switch self { case .folder(let g): g.id; case .place(let p): p.id }
+        }
+        var sortIndex: Int {
+            switch self { case .folder(let g): g.sortIndex; case .place(let p): p.sortIndex }
+        }
+        var isFolder: Bool { if case .folder = self { true } else { false } }
+        var name: String {
+            switch self { case .folder(let g): g.name; case .place(let p): p.name }
+        }
+    }
+
+    private var items: [Item] {
+        var list = folders.map(Item.folder) + visible.map(Item.place)
+        if let order = liveOrder {
+            let pos = Dictionary(order.enumerated().map { ($1, $0) }, uniquingKeysWith: { a, _ in a })
+            list.sort { (pos[$0.id] ?? .max, $0.sortIndex) < (pos[$1.id] ?? .max, $1.sortIndex) }
+        } else {
+            list.sort { a, b in
+                if a.sortIndex != b.sortIndex { return a.sortIndex < b.sortIndex }
+                if a.isFolder != b.isFolder { return a.isFolder }
+                return a.name < b.name
+            }
+        }
+        return list
+    }
     private var selectedPlaces: [Place] { places.filter { selectedIDs.contains($0.id) } }
     private func members(of g: PlaceGroup) -> [Place] { places.filter { $0.groupName == g.name } }
 
@@ -75,11 +108,11 @@ struct PlaceBoard: View {
     var body: some View {
         ScrollView {
             LazyVGrid(columns: columns, alignment: .center, spacing: 22) {
-                ForEach(folders) { g in
-                    folderTile(g)
-                }
-                ForEach(visible) { place in
-                    tile(for: place)
+                ForEach(items) { item in
+                    switch item {
+                    case .folder(let g): folderTile(g)
+                    case .place(let p): tile(for: p)
+                    }
                 }
             }
             .coordinateSpace(.named(Self.space))
@@ -107,6 +140,7 @@ struct PlaceBoard: View {
         .safeAreaInset(edge: .bottom) {
             if selecting { batchBar }
         }
+        .navigationDestination(item: $openFolder) { PlaceBoard(folder: $0) }
         .navigationTitle(selecting ? "已选 \(selectedIDs.count) 个" : (folder?.name ?? "HyperGO"))
         .toolbar { toolbarContent }
         .sheet(isPresented: $showingNew) { PlaceEditorView(place: nil, initialGroup: folder?.name ?? "") }
@@ -182,20 +216,35 @@ struct PlaceBoard: View {
 
     @ViewBuilder
     private func folderTile(_ g: PlaceGroup) -> some View {
-        NavigationLink(value: g) {
-            FolderTile(group: g, members: members(of: g), targeted: targetedFolder == g.id)
-        }
-        .buttonStyle(.plain)
-        .disabled(selecting)
-        .opacity(selecting ? 0.4 : 1)
-        .contextMenu {
-            Button { editingFolder = g } label: { Label("编辑分组", systemImage: "pencil") }
-            Button(role: .destructive) {
-                GroupStore.delete(g, places: places, in: context)
-            } label: { Label("删除分组（保留地点）", systemImage: "trash") }
-        }
-        .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(Self.space)) } action: { folderFrames[g.id] = $0 }
-        .onDisappear { folderFrames[g.id] = nil }
+        let base = FolderTile(group: g, members: members(of: g), targeted: targetedFolder == g.id)
+            .opacity(dragID == g.id ? 0 : (selecting ? 0.4 : 1))
+            .scaleEffect(pressedID == g.id && dragID == nil ? 1.1 : 1)
+            .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(Self.space)) } action: { tileFrames[g.id] = $0 }
+            .onTapGesture {
+                guard !selecting, tapAllowed else { return }
+                openFolder = g
+            }
+        pressInteraction(base, id: g.id)
+            .popover(isPresented: menuBinding(g.id)) {
+                VStack(alignment: .leading, spacing: 0) {
+                    menuRow("编辑分组", "pencil") { editingFolder = g }
+                    Divider()
+                    menuRow("删除分组（保留地点）", "trash", destructive: true) {
+                        withAnimation(.snappy) { GroupStore.delete(g, places: places, in: context) }
+                    }
+                }
+                .frame(width: 250)
+                .presentationCompactAdaptation(.popover)
+            }
+    }
+
+    /// 长按过（拖动或弹菜单）就不算点击
+    private var tapAllowed: Bool {
+        dragID == nil && menuID == nil && pressedID == nil && Date.now.timeIntervalSince(longPressTime) > 0.8
+    }
+
+    private func menuBinding(_ id: PersistentIdentifier) -> Binding<Bool> {
+        Binding(get: { menuID == id }, set: { if !$0, menuID == id { menuID = nil } })
     }
 
     // MARK: 单个地点
@@ -219,19 +268,16 @@ struct PlaceBoard: View {
                 }
             }
             .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(Self.space)) } action: { tileFrames[place.id] = $0 }
-            .onDisappear { tileFrames[place.id] = nil }
             .onTapGesture {
-                // 长按过（拖动或弹菜单）就不算点击
-                guard dragID == nil, menuID == nil, pressedID == nil, Date.now.timeIntervalSince(longPressTime) > 0.8 else { return }
+                guard tapAllowed else { return }
                 if selecting {
                     if isSelected { selectedIDs.remove(place.id) } else { selectedIDs.insert(place.id) }
                 } else {
                     GoogleMaps.navigate(to: place.coordinate, mode: travelMode)
                 }
             }
-        pressInteraction(base, place: place)
-            .popover(isPresented: Binding(get: { menuID == place.id },
-                                          set: { if !$0, menuID == place.id { menuID = nil } })) {
+        pressInteraction(base, id: place.id)
+            .popover(isPresented: menuBinding(place.id)) {
                 placeMenu(for: place)
                     .presentationCompactAdaptation(.popover)
             }
@@ -240,10 +286,17 @@ struct PlaceBoard: View {
     /// 被拖动的图标：跟着手指移动，浮在其他图标上面
     @ViewBuilder
     private var floatingTile: some View {
-        if let id = dragID, let place = places.first(where: { $0.id == id }) {
-            PlaceTile(place: place,
-                      routeDistance: routeDistances.distance(to: place.coordinate),
-                      straightDistance: locationManager.distance(to: place.coordinate))
+        if let id = dragID, let item = items.first(where: { $0.id == id }) {
+            Group {
+                switch item {
+                case .folder(let g):
+                    FolderTile(group: g, members: members(of: g))
+                case .place(let place):
+                    PlaceTile(place: place,
+                              routeDistance: routeDistances.distance(to: place.coordinate),
+                              straightDistance: locationManager.distance(to: place.coordinate))
+                }
+            }
                 .frame(width: dragSize.width, height: dragSize.height)
                 .scaleEffect(sinking ? 0.25 : (lifted ? 1.15 : 1))
                 .opacity(sinking ? 0 : 1)
@@ -434,7 +487,7 @@ struct PlaceBoard: View {
     // MARK: 拖动
 
     /// 长按 0.3 秒图标放大：移动手指开始拖动，不移动直接松手则弹出菜单（iOS 17 用）
-    private func dragGesture(for place: Place) -> some Gesture {
+    private func dragGesture(for id: PersistentIdentifier) -> some Gesture {
         LongPressGesture(minimumDuration: 0.3)
             .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .named(Self.space)))
             .updating($pressing) { value, state, _ in
@@ -442,52 +495,53 @@ struct PlaceBoard: View {
             }
             .onChanged { value in
                 guard case .second(true, let d) = value else { return }
-                pressBegan(place)
-                if let d { pressMoved(place, d.translation) }
+                pressBegan(id)
+                if let d { pressMoved(id, d.translation, d.location) }
             }
-            .onEnded { _ in pressEnded(place) }
+            .onEnded { _ in pressEnded(id) }
     }
 
     /// 长按拖动：iOS 18 起用系统的长按识别器，不会挡住列表滚动
     @ViewBuilder
-    private func pressInteraction<V: View>(_ content: V, place: Place) -> some View {
+    private func pressInteraction<V: View>(_ content: V, id: PersistentIdentifier) -> some View {
         if selecting {
             content
         } else if #available(iOS 18.0, *) {
-            content.gesture(LongPressDragRecognizer(space: Self.space) { state, translation in
+            content.gesture(LongPressDragRecognizer(space: Self.space) { state, translation, location in
                 switch state {
-                case .began: pressBegan(place)
-                case .changed: pressMoved(place, translation)
-                case .ended: pressEnded(place)
+                case .began: pressBegan(id)
+                case .changed: pressMoved(id, translation, location)
+                case .ended: pressEnded(id)
                 default: pressCancelled()
                 }
             })
         } else {
-            content.gesture(dragGesture(for: place))
+            content.gesture(dragGesture(for: id))
         }
     }
 
-    private func pressBegan(_ place: Place) {
-        guard pressedID != place.id, dragID == nil else { return }
+    private func pressBegan(_ id: PersistentIdentifier) {
+        guard pressedID != id, dragID == nil else { return }
         longPressTime = .now
-        withAnimation(.snappy(duration: 0.2)) { pressedID = place.id }
+        withAnimation(.snappy(duration: 0.2)) { pressedID = id }
     }
 
-    private func pressMoved(_ place: Place, _ translation: CGSize) {
+    private func pressMoved(_ id: PersistentIdentifier, _ translation: CGSize, _ location: CGPoint) {
+        finger = location
         if dragID == nil {
             // 移动一点距离才算开始拖动，否则松手弹出菜单
             guard hypot(translation.width, translation.height) > 6 else { return }
-            beginDrag(place)
+            beginDrag(id)
         }
-        guard dragID == place.id else { return }
+        guard dragID == id else { return }
         dragTranslation = translation
-        dragMoved(place)
+        dragMoved(id)
     }
 
-    private func pressEnded(_ place: Place) {
-        if pressedID == place.id {
+    private func pressEnded(_ id: PersistentIdentifier) {
+        if pressedID == id {
             longPressTime = .now
-            if dragID == nil { menuID = place.id }
+            if dragID == nil { menuID = id }
         }
         withAnimation(.snappy) { pressedID = nil }
         endDrag()
@@ -498,28 +552,39 @@ struct PlaceBoard: View {
         endDrag()
     }
 
-    private func beginDrag(_ place: Place) {
-        guard let frame = tileFrames[place.id] else { return }
+    private func beginDrag(_ id: PersistentIdentifier) {
+        guard let frame = tileFrames[id] else { return }
         dragStart = CGPoint(x: frame.midX, y: frame.midY)
         dragSize = frame.size
         dragTranslation = .zero
         sinking = false
-        dragID = place.id
+        liveOrder = items.map(\.id)
+        dragID = id
         withAnimation(.snappy(duration: 0.2)) { lifted = true }
     }
 
-    /// 手指经过文件夹时高亮；经过其他图标时换位
-    private func dragMoved(_ place: Place) {
-        let p = CGPoint(x: dragStart.x + dragTranslation.width, y: dragStart.y + dragTranslation.height)
-        if let g = folders.first(where: { folderFrames[$0.id]?.insetBy(dx: 6, dy: 6).contains(p) == true }) {
-            if targetedFolder != g.id { withAnimation(.snappy) { targetedFolder = g.id } }
-            return
+    /// 地点拖到文件夹的图案上：高亮，松手放进去；拖到其他位置（包括文件夹名字处）：换位
+    private func dragMoved(_ id: PersistentIdentifier) {
+        let p = finger
+        let draggingFolder = groups.contains { $0.id == id }
+        var newTarget: PersistentIdentifier?
+        var swapWith: PersistentIdentifier?
+        for item in items where item.id != id {
+            guard let f = tileFrames[item.id], f.insetBy(dx: 6, dy: 6).contains(p) else { continue }
+            // 文件夹图案区域（图标在格子顶部，60×60）
+            let icon = CGRect(x: f.midX - 32, y: f.minY - 2, width: 64, height: 64)
+            if item.isFolder, !draggingFolder, icon.contains(p) {
+                newTarget = item.id
+            } else {
+                swapWith = item.id
+            }
+            break
         }
-        if targetedFolder != nil { withAnimation(.snappy) { targetedFolder = nil } }
-        guard let target = visible.first(where: {
-            $0.id != place.id && tileFrames[$0.id]?.insetBy(dx: 8, dy: 8).contains(p) == true
-        }) else { return }
-        withAnimation(.snappy(duration: 0.3)) { moveLive(place, to: target) }
+        if targetedFolder != newTarget { withAnimation(.snappy) { targetedFolder = newTarget } }
+        guard let swapWith, var order = liveOrder,
+              let from = order.firstIndex(of: id), let to = order.firstIndex(of: swapWith) else { return }
+        order.move(fromOffsets: IndexSet(integer: from), toOffset: to > from ? to + 1 : to)
+        withAnimation(.snappy(duration: 0.3)) { liveOrder = order }
     }
 
     /// 松手：放进文件夹，或者滑回空出来的位置
@@ -527,7 +592,7 @@ struct PlaceBoard: View {
         guard let id = dragID else { return }
         let place = places.first(where: { $0.id == id })
         if let gid = targetedFolder, let g = groups.first(where: { $0.id == gid }),
-           let folderFrame = folderFrames[gid], let place {
+           let folderFrame = tileFrames[gid], let place {
             withAnimation(.snappy(duration: 0.25)) {
                 dragTranslation = CGSize(width: folderFrame.midX - dragStart.x, height: folderFrame.midY - dragStart.y)
                 sinking = true
@@ -550,23 +615,25 @@ struct PlaceBoard: View {
         }
     }
 
+    /// 结束拖动：把这一页的新顺序写回数据（只改这一页的东西）
     private func finishDrag(_ id: PersistentIdentifier) {
         guard dragID == id else { return }
+        if let order = liveOrder {
+            let current = Dictionary(uniqueKeysWithValues: (folders.map(Item.folder) + visible.map(Item.place)).map { ($0.id, $0) })
+            for (i, oid) in order.enumerated() {
+                switch current[oid] {
+                case .folder(let g)?: if g.sortIndex != i { g.sortIndex = i }
+                case .place(let p)?: if p.sortIndex != i { p.sortIndex = i }
+                case nil: break
+                }
+            }
+        }
+        liveOrder = nil
         dragID = nil
         dragTranslation = .zero
         lifted = false
         sinking = false
         try? context.save()
-    }
-
-    /// 拖动经过另一个图标时立即换位（其他图标带动画让开）
-    private func moveLive(_ item: Place, to target: Place) {
-        guard item.id != target.id,
-              let from = places.firstIndex(of: item),
-              let to = places.firstIndex(of: target) else { return }
-        var items = places
-        items.move(fromOffsets: IndexSet(integer: from), toOffset: to > from ? to + 1 : to)
-        for (i, p) in items.enumerated() where p.sortIndex != i { p.sortIndex = i }
     }
 
     /// 位置（约 100 米精度）、出行方式或地点变化时重新计算道路距离
@@ -656,7 +723,7 @@ struct SettingsView: View {
 @available(iOS 18.0, *)
 private struct LongPressDragRecognizer: UIGestureRecognizerRepresentable {
     let space: String
-    let action: (UIGestureRecognizer.State, CGSize) -> Void
+    let action: (UIGestureRecognizer.State, CGSize, CGPoint) -> Void
 
     final class Coordinator { var start: CGPoint = .zero }
 
@@ -672,6 +739,6 @@ private struct LongPressDragRecognizer: UIGestureRecognizerRepresentable {
         let p = context.converter.location(in: .named(space))
         if recognizer.state == .began { context.coordinator.start = p }
         let s = context.coordinator.start
-        action(recognizer.state, CGSize(width: p.x - s.x, height: p.y - s.y))
+        action(recognizer.state, CGSize(width: p.x - s.x, height: p.y - s.y), p)
     }
 }

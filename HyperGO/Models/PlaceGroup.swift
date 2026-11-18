@@ -31,16 +31,41 @@ enum GroupStore {
         let colors = Presets.colors
         let group = PlaceGroup(name: name,
                                colorHex: colors[(all.count + 6) % colors.count],
-                               sortIndex: (all.map(\.sortIndex).max() ?? -1) + 1)
+                               sortIndex: nextSortIndex(in: context))
         context.insert(group)
         return group
     }
 
-    /// 把地点放进分组（名称为空表示移出分组）
+    /// 首页文件夹和地点共用一套排序号；新东西排在最后
+    static func nextSortIndex(in context: ModelContext) -> Int {
+        let p = (try? context.fetch(FetchDescriptor<Place>()))?.map(\.sortIndex).max() ?? -1
+        let g = (try? context.fetch(FetchDescriptor<PlaceGroup>()))?.map(\.sortIndex).max() ?? -1
+        return max(p, g) + 1
+    }
+
+    /// 把地点放进分组（名称为空表示移出分组），换了分组的地点排到最后
     static func assign(_ places: [Place], to name: String, in context: ModelContext) {
         let name = name.trimmingCharacters(in: .whitespaces)
         if !name.isEmpty { ensure(name, in: context) }
-        for p in places { p.groupName = name }
+        var next = nextSortIndex(in: context)
+        for p in places where p.groupName != name {
+            p.groupName = name
+            p.sortIndex = next
+            next += 1
+        }
+    }
+
+    /// 旧版本文件夹固定排在最前面：第一次升级时按「文件夹在前、地点在后」排好首页顺序
+    static func migrateHomeOrder(in context: ModelContext) {
+        let key = "homeOrderV2"
+        guard !UserDefaults.standard.bool(forKey: key) else { return }
+        let groups = ((try? context.fetch(FetchDescriptor<PlaceGroup>())) ?? []).sorted { $0.sortIndex < $1.sortIndex }
+        let loose = ((try? context.fetch(FetchDescriptor<Place>())) ?? [])
+            .filter { $0.groupName.isEmpty }.sorted { $0.sortIndex < $1.sortIndex }
+        for (i, g) in groups.enumerated() { g.sortIndex = i }
+        for (i, p) in loose.enumerated() { p.sortIndex = groups.count + i }
+        try? context.save()
+        UserDefaults.standard.set(true, forKey: key)
     }
 
     static func rename(_ group: PlaceGroup, to newName: String, places: [Place]) {

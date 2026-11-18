@@ -181,9 +181,13 @@ struct PlaceEditorView: View {
             place.latitude = coordinate.latitude
             place.longitude = coordinate.longitude
             place.address = address
-            place.groupName = groupName.trimmingCharacters(in: .whitespaces)
+            let newGroup = groupName.trimmingCharacters(in: .whitespaces)
+            if place.groupName != newGroup {
+                place.groupName = newGroup
+                place.sortIndex = GroupStore.nextSortIndex(in: context)
+            }
         } else {
-            let count = (try? context.fetchCount(FetchDescriptor<Place>())) ?? 0
+            let count = GroupStore.nextSortIndex(in: context)
             context.insert(Place(name: trimmed, icon: icon, colorHex: colorHex,
                                  latitude: coordinate.latitude, longitude: coordinate.longitude,
                                  address: address, sortIndex: count,

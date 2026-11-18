@@ -56,9 +56,9 @@ enum PlaceImporter {
         var result = Result()
         let existing = (try? context.fetch(FetchDescriptor<Place>())) ?? []
         var known = Set(existing.map { key($0.name, $0.address) })
-        var nextIndex = (existing.map(\.sortIndex).max() ?? -1) + 1
         let geocoder = CLGeocoder()
         GroupStore.ensure(groupName, in: context)
+        var nextIndex = GroupStore.nextSortIndex(in: context)
         let region = near.map { CLCircularRegion(center: $0.coordinate, radius: 80_000, identifier: "near") }
 
         for (i, entry) in entries.enumerated() {

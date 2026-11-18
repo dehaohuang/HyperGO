@@ -44,6 +44,7 @@ struct ContentView: View {
         }
         .onAppear {
             GroupStore.migrateLegacy(in: context)
+            GroupStore.migrateHomeOrder(in: context)
             locationManager.start()
             #if DEBUG
             SampleData.insertIfRequested(into: context)
