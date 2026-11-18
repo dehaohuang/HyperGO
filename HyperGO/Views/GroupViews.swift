@@ -8,10 +8,24 @@ enum PlaceGroups {
     static let all = ""
     static let ungrouped = "\u{1}未分组"
 
-    /// 所有出现过的分组名称（按名称排序）
+    /// 分组的自定义顺序（在「管理分组」里拖动调整），存在 UserDefaults
+    static let orderKey = "groupOrder"
+    static var order: [String] {
+        get { (UserDefaults.standard.string(forKey: orderKey) ?? "").split(separator: "\n").map(String.init) }
+        set { UserDefaults.standard.set(newValue.joined(separator: "\n"), forKey: orderKey) }
+    }
+
+    /// 所有出现过的分组名称：先按自定义顺序，没排过的按名称排在后面
     static func names(in places: [Place]) -> [String] {
-        Array(Set(places.map(\.groupName).filter { !$0.isEmpty }))
-            .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+        let order = self.order
+        return Array(Set(places.map(\.groupName).filter { !$0.isEmpty })).sorted { a, b in
+            let ia = order.firstIndex(of: a) ?? .max, ib = order.firstIndex(of: b) ?? .max
+            return ia != ib ? ia < ib : a.localizedStandardCompare(b) == .orderedAscending
+        }
+    }
+
+    static func rename(_ old: String, to new: String) {
+        order = order.map { $0 == old ? new : $0 }
     }
 
     /// 按筛选值过滤；筛选的分组已不存在时视为「全部」
@@ -34,6 +48,8 @@ struct GroupChip: View {
     let title: String
     var count: Int? = nil
     let selected: Bool
+    /// 有地点拖到这个标签上方时高亮
+    var targeted: Bool = false
     let action: () -> Void
 
     var body: some View {
@@ -49,6 +65,9 @@ struct GroupChip: View {
             .padding(.vertical, 6)
             .foregroundStyle(selected ? .white : .primary)
             .background(selected ? Color.accentColor : Color(.secondarySystemFill), in: Capsule())
+            .overlay(Capsule().stroke(Color.accentColor, lineWidth: targeted ? 2.5 : 0))
+            .scaleEffect(targeted ? 1.15 : 1)
+            .animation(.snappy, value: targeted)
         }
         .buttonStyle(.plain)
     }
@@ -58,6 +77,10 @@ struct GroupChip: View {
 struct GroupFilterBar: View {
     let places: [Place]
     @Binding var selection: String
+    /// 把地点拖到分组标签上时调用（参数是分组名称，「未分组」为空字符串）；nil 表示不接收拖放
+    var onDropPlace: ((String) -> Void)? = nil
+    @AppStorage(PlaceGroups.orderKey) private var orderRaw = ""   // 顺序变化时刷新
+    @State private var targeted: String?
 
     var body: some View {
         let groups = PlaceGroups.names(in: places)
@@ -70,15 +93,18 @@ struct GroupFilterBar: View {
                     }
                     ForEach(groups, id: \.self) { g in
                         GroupChip(title: g, count: places.filter { $0.groupName == g }.count,
-                                  selected: current(groups) == g) {
+                                  selected: current(groups) == g, targeted: targeted == g) {
                             selection = g
                         }
+                        .modifier(ChipDrop(key: g, value: g, targeted: $targeted, onDrop: onDropPlace))
                     }
-                    if ungroupedCount > 0 {
+                    if ungroupedCount > 0 || onDropPlace != nil {
                         GroupChip(title: "未分组", count: ungroupedCount,
-                                  selected: current(groups) == PlaceGroups.ungrouped) {
+                                  selected: current(groups) == PlaceGroups.ungrouped,
+                                  targeted: targeted == PlaceGroups.ungrouped) {
                             selection = PlaceGroups.ungrouped
                         }
+                        .modifier(ChipDrop(key: PlaceGroups.ungrouped, value: "", targeted: $targeted, onDrop: onDropPlace))
                     }
                 }
                 .padding(.horizontal, 16)
@@ -96,6 +122,28 @@ struct GroupFilterBar: View {
     }
 }
 
+/// 分组标签作为拖放目标
+private struct ChipDrop: ViewModifier {
+    let key: String
+    let value: String
+    @Binding var targeted: String?
+    let onDrop: ((String) -> Void)?
+
+    func body(content: Content) -> some View {
+        if let onDrop {
+            content.onDrop(of: [.plainText], isTargeted: Binding(
+                get: { targeted == key },
+                set: { on in targeted = on ? key : (targeted == key ? nil : targeted) }
+            )) { _ in
+                onDrop(value)
+                return true
+            }
+        } else {
+            content
+        }
+    }
+}
+
 // MARK: - 分组管理
 
 struct GroupManagerView: View {
@@ -107,10 +155,14 @@ struct GroupManagerView: View {
     @State private var renaming: String?
     @State private var renameText = ""
     @State private var pendingNewGroup: String?
+    @State private var selectedGroups = Set<String>()
+    @State private var editMode: EditMode = .inactive
+    @State private var confirmingDelete = false
+    @AppStorage(PlaceGroups.orderKey) private var orderRaw = ""
 
     var body: some View {
         NavigationStack {
-            List {
+            List(selection: $selectedGroups) {
                 let groups = PlaceGroups.names(in: places)
                 Section {
                     ForEach(groups, id: \.self) { g in
@@ -125,6 +177,12 @@ struct GroupManagerView: View {
                                 .tint(.orange)
                         }
                     }
+                    .onMove { from, to in
+                        var list = groups
+                        list.move(fromOffsets: from, toOffset: to)
+                        PlaceGroups.order = list
+                        orderRaw = PlaceGroups.order.joined(separator: "\n")
+                    }
                     if let pending = pendingNewGroup, !groups.contains(pending) {
                         NavigationLink {
                             GroupMembersView(groupName: pending)
@@ -135,16 +193,40 @@ struct GroupManagerView: View {
                 } footer: {
                     Text(groups.isEmpty && pendingNewGroup == nil
                          ? "还没有分组。点右上角「+」创建一个，再选择要放进去的地点。"
-                         : "点分组可以选择里面的地点；左滑可以重命名或删除。删除分组不会删除地点，只是把它们变成未分组。")
+                         : "点分组可以选择里面的地点；左滑可以重命名或删除；点「编辑」可以拖动调整顺序、多选批量删除。删除分组不会删除地点，只是把它们变成未分组。")
                 }
             }
             .navigationTitle("管理分组")
             .navigationBarTitleDisplayMode(.inline)
+            .environment(\.editMode, $editMode)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("完成") { dismiss() } }
-                ToolbarItem(placement: .primaryAction) {
+                ToolbarItemGroup(placement: .primaryAction) {
+                    if !PlaceGroups.names(in: places).isEmpty {
+                        Button(editMode.isEditing ? "好" : "编辑") {
+                            withAnimation { editMode = editMode.isEditing ? .inactive : .active }
+                            selectedGroups.removeAll()
+                        }
+                    }
                     Button { newGroupName = ""; showingNew = true } label: { Label("新建", systemImage: "plus") }
                 }
+                if editMode.isEditing {
+                    ToolbarItem(placement: .bottomBar) {
+                        Button(role: .destructive) { confirmingDelete = true } label: {
+                            Text(selectedGroups.isEmpty ? "选择要删除的分组" : "删除 \(selectedGroups.count) 个分组")
+                        }
+                        .disabled(selectedGroups.isEmpty)
+                    }
+                }
+            }
+            .confirmationDialog("删除 \(selectedGroups.count) 个分组？", isPresented: $confirmingDelete, titleVisibility: .visible) {
+                Button("删除分组", role: .destructive) {
+                    for g in selectedGroups { delete(g) }
+                    selectedGroups.removeAll()
+                    editMode = .inactive
+                }
+            } message: {
+                Text("里面的地点不会被删除，只会变成未分组。")
             }
             .alert("新建分组", isPresented: $showingNew) {
                 TextField("分组名称", text: $newGroupName)
@@ -163,6 +245,7 @@ struct GroupManagerView: View {
                     let name = renameText.trimmingCharacters(in: .whitespaces)
                     if let old = renaming, !name.isEmpty {
                         for p in places where p.groupName == old { p.groupName = name }
+                        PlaceGroups.rename(old, to: name)
                     }
                     renaming = nil
                 }
