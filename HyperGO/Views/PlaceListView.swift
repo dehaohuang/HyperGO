@@ -11,33 +11,37 @@ struct PlaceListView: View {
     @State private var showingNew = false
     @State private var showingSettings = false
 
+    /// 一排最多 4 个图标
+    private let columns = Array(repeating: GridItem(.flexible(), spacing: 12, alignment: .top), count: 4)
+
     var body: some View {
         NavigationStack {
-            List {
-                ForEach(places) { place in
-                    Button {
-                        GoogleMaps.navigate(to: place.coordinate, mode: travelMode)
-                    } label: {
-                        PlaceRow(place: place, distance: locationManager.distance(to: place.coordinate))
-                    }
-                    .buttonStyle(.plain)
-                    .swipeActions(edge: .trailing) {
-                        Button(role: .destructive) { delete(place) } label: {
-                            Label("删除", systemImage: "trash")
+            ScrollView {
+                LazyVGrid(columns: columns, alignment: .center, spacing: 22) {
+                    ForEach(Array(places.enumerated()), id: \.element.id) { index, place in
+                        Button {
+                            GoogleMaps.navigate(to: place.coordinate, mode: travelMode)
+                        } label: {
+                            PlaceTile(place: place, distance: locationManager.distance(to: place.coordinate))
                         }
-                        Button { editingPlace = place } label: {
-                            Label("编辑", systemImage: "pencil")
+                        .buttonStyle(.plain)
+                        .contextMenu {
+                            Button { editingPlace = place } label: { Label("编辑", systemImage: "pencil") }
+                            Button(role: .destructive) { delete(place) } label: { Label("删除", systemImage: "trash") }
                         }
-                        .tint(.orange)
-                    }
-                    .contextMenu {
-                        Button { editingPlace = place } label: { Label("编辑", systemImage: "pencil") }
-                        Button(role: .destructive) { delete(place) } label: { Label("删除", systemImage: "trash") }
+                        .draggable(String(index)) {
+                            PlaceIconView(icon: place.icon, colorHex: place.colorHex, size: 60)
+                        }
+                        .dropDestination(for: String.self) { items, _ in
+                            guard let from = items.first.flatMap(Int.init), from != index else { return false }
+                            withAnimation { move(from: from, to: index) }
+                            return true
+                        }
                     }
                 }
-                .onMove(perform: move)
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
             }
-            .listStyle(.insetGrouped)
             .overlay {
                 if places.isEmpty {
                     ContentUnavailableView {
@@ -58,8 +62,7 @@ struct PlaceListView: View {
                             .labelStyle(.titleAndIcon)
                     }
                 }
-                ToolbarItemGroup(placement: .topBarTrailing) {
-                    if !places.isEmpty { EditButton() }
+                ToolbarItem(placement: .topBarTrailing) {
                     Button { showingNew = true } label: { Image(systemName: "plus") }
                 }
             }
@@ -73,43 +76,39 @@ struct PlaceListView: View {
         context.delete(place)
     }
 
-    private func move(from source: IndexSet, to destination: Int) {
+    /// 拖动图标调整顺序：把 from 位置的地点移到 to 位置
+    private func move(from: Int, to: Int) {
+        guard places.indices.contains(from), places.indices.contains(to) else { return }
         var items = places
-        items.move(fromOffsets: source, toOffset: destination)
+        let item = items.remove(at: from)
+        items.insert(item, at: to)
         for (i, item) in items.enumerated() { item.sortIndex = i }
     }
 }
 
-struct PlaceRow: View {
+/// 主屏幕风格的图标：彩色圆形图标 + 名称 + 距离
+struct PlaceTile: View {
     let place: Place
     let distance: Double?
 
     var body: some View {
-        HStack(spacing: 14) {
-            PlaceIconView(icon: place.icon, colorHex: place.colorHex, size: 46)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(place.name).font(.headline)
-                if !place.address.isEmpty {
-                    Text(place.address)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-            }
-            Spacer(minLength: 8)
-            VStack(alignment: .trailing, spacing: 3) {
-                Image(systemName: "arrow.triangle.turn.up.right.circle.fill")
-                    .font(.title2)
-                    .foregroundStyle(.blue)
-                if let distance {
-                    Text(Format.distance(distance))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .monospacedDigit()
-                }
+        VStack(spacing: 6) {
+            PlaceIconView(icon: place.icon, colorHex: place.colorHex, size: 60)
+            Text(place.name)
+                .font(.caption)
+                .fontWeight(.medium)
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            if let distance {
+                Text(Format.distance(distance))
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+                    .lineLimit(1)
             }
         }
-        .padding(.vertical, 4)
+        .frame(maxWidth: .infinity)
         .contentShape(Rectangle())
     }
 }
