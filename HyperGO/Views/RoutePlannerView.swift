@@ -11,18 +11,23 @@ struct RoutePlannerView: View {
     @AppStorage("route.returnToStart") private var returnToStart = false
     @State private var plan: RoutePlan?
     @State private var computing = false
-    @AppStorage("groupFilter") private var groupFilter = PlaceGroups.all
+    /// 路线页自己的分组筛选（可多选，和地图页互不影响）；空 = 全部
+    @AppStorage("route.groupFilter") private var groupFilterRaw = ""
+    @Query(sort: \PlaceGroup.sortIndex) private var groups: [PlaceGroup]
+    private var groupFilter: Binding<Set<String>> {
+        Binding(get: { PlaceGroups.decode(groupFilterRaw) }, set: { groupFilterRaw = PlaceGroups.encode($0) })
+    }
 
-    private var visible: [Place] { PlaceGroups.filter(places, by: groupFilter) }
+    private var visible: [Place] { PlaceGroups.filter(places, by: PlaceGroups.decode(groupFilterRaw)) }
 
     private var selectedPlaces: [Place] { places.filter { selection.contains($0.id) } }
 
     var body: some View {
         NavigationStack {
             List {
-                if !PlaceGroups.names(in: places).isEmpty {
+                if !groups.isEmpty {
                     Section {
-                        GroupFilterBar(places: places, selection: $groupFilter)
+                        MultiGroupFilterBar(places: places, groups: groups, selection: groupFilter)
                             .listRowInsets(EdgeInsets())
                             .listRowBackground(Color.clear)
                     }

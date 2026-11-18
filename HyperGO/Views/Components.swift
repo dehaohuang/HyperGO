@@ -57,6 +57,16 @@ enum Presets {
         "mappin", "person.2.fill", "pawprint.fill", "book.fill",
     ]
 
+    /// 文件夹（分组）可选图案
+    static let folderSymbols = [
+        "folder.fill", "person.2.fill", "briefcase.fill", "cart.fill",
+        "house.fill", "building.2.fill", "star.fill", "heart.fill",
+        "shippingbox.fill", "pawprint.fill", "fork.knife", "cup.and.saucer.fill",
+        "car.fill", "bag.fill", "gift.fill", "flag.fill",
+        "graduationcap.fill", "cross.case.fill", "wrench.and.screwdriver.fill", "leaf.fill",
+        "sun.max.fill", "moon.fill", "bolt.fill", "tag.fill",
+    ]
+
     static let colors = [
         "#FF3B30", "#FF9500", "#FFCC00", "#34C759", "#00C7BE",
         "#30B0C7", "#007AFF", "#5856D6", "#AF52DE", "#FF2D55",

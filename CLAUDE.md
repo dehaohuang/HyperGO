@@ -6,11 +6,13 @@
 - 没有付费 Apple 开发者账号：用免费 Apple ID（Personal Team）签名，装到自己的 iPhone，7 天需重新签名一次。不要使用需要付费账号的能力（iCloud/CloudKit、推送等）。
 
 ## App 功能
-iOS 上的「快捷导航」App：
-1. **地点**（首页）：记录自定义地点，可自定义名称、图标（SF Symbol 或 emoji）、颜色；点一下用 Google 地图导航。
-2. **地图**：MapKit 显示所有地点和当前位置，查看直线距离/预计用时。
-3. **路线**：多选地点（最多 10 个），自动算最短访问顺序（≤12 点 Held-Karp 精确解，更多点用最近邻 + 2-opt），再交给 Google 地图多站导航。
-- 导航本身交给 Google 地图（`comgooglemaps://`，未安装时用 `https://www.google.com/maps/dir/?api=1` 网页版）。
+iOS 上的「快捷导航」App（只支持驾车）：
+1. **地点**（首页）：分组显示成文件夹大图标（可自定义名称、图案、颜色，默认显示组内 4 个地点预览），未分组的地点放在外面；一排 4 个图标，图标下显示最短道路距离；点地点用 Google 地图导航；拖动排序（实时让位）、拖到文件夹上归组、长按菜单、多选批量操作、批量导入。
+2. **地图**：MapKit 显示地点（名称自绘、按屏幕避让），可隐藏地图兴趣点文字；分组筛选可多选，和路线页互相独立。
+3. **路线**：分组多选筛选，不限数量选地点，算最短访问顺序（≤12 点 Held-Karp 精确解，更多点多起点最近邻 + 2-opt + Or-opt），按 Google 地图 10 站上限自动分段导航。
+- 设置：字体大小（只影响首页图标文字和地图地点名称）。
+- 数据：SwiftData，`Place`（groupName 关联分组名）+ `PlaceGroup`（name/icon/colorHex/sortIndex）。
+- 导航交给 Google 地图（`comgooglemaps://`，未安装时用网页版）。
 
 ## 技术栈
 - SwiftUI + SwiftData + MapKit，最低 iOS 17，Swift 5 语言模式。

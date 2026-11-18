@@ -1,10 +1,25 @@
 import SwiftUI
 import SwiftData
 
+/// 首页：分组文件夹 + 未分组的地点
 struct PlaceListView: View {
+    var body: some View {
+        NavigationStack {
+            PlaceBoard(folder: nil)
+                .navigationDestination(for: PlaceGroup.self) { PlaceBoard(folder: $0) }
+        }
+    }
+}
+
+/// 图标网格页面。folder 为 nil 是首页（显示文件夹和未分组地点），否则是某个文件夹的内页
+struct PlaceBoard: View {
+    let folder: PlaceGroup?
+
     @Environment(\.modelContext) private var context
+    @Environment(\.dismiss) private var dismiss
     @Environment(LocationManager.self) private var locationManager
     @Query(sort: \Place.sortIndex, animation: .snappy) private var places: [Place]
+    @Query(sort: \PlaceGroup.sortIndex, animation: .snappy) private var groups: [PlaceGroup]
     @AppStorage("travelMode") private var travelMode: TravelMode = .driving
 
     @State private var editingPlace: Place?
@@ -13,101 +28,152 @@ struct PlaceListView: View {
     @State private var showingImport = false
     @State private var routeDistances = RouteDistanceStore()
     @State private var showingGroups = false
-    @AppStorage("groupFilter") private var groupFilter = PlaceGroups.all
-    /// 「新建分组…」要放进新分组的地点（单个或批量）
-    @State private var groupingTargets: [Place] = []
-    @State private var newGroupText = ""
+    @State private var editingFolder: PlaceGroup?
+    @State private var showingMembers = false
+    @State private var confirmingDeleteFolder = false
+    /// 「新建分组…」后要放进新分组的地点
+    @State private var newGroupTargets: [Place] = []
 
     /// 拖动状态：原位置留空，其他图标实时让位
     @State private var drag = DragState()
+    /// 地点拖到哪个文件夹上方（高亮）
+    @State private var targetedFolder: PersistentIdentifier?
 
     /// 多选模式
     @State private var selecting = false
     @State private var selectedIDs = Set<PersistentIdentifier>()
     @State private var confirmingDelete = false
 
-    /// 按分组筛选后要显示的地点
-    private var visible: [Place] { PlaceGroups.filter(places, by: groupFilter) }
+    /// 本页显示的地点：首页是未分组的，文件夹里是组内的
+    private var visible: [Place] {
+        if let folder { return places.filter { $0.groupName == folder.name } }
+        return places.filter { $0.groupName.isEmpty }
+    }
+    private var folders: [PlaceGroup] { folder == nil ? groups : [] }
     private var selectedPlaces: [Place] { places.filter { selectedIDs.contains($0.id) } }
+    private func members(of g: PlaceGroup) -> [Place] { places.filter { $0.groupName == g.name } }
 
     /// 一排最多 4 个图标
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 12, alignment: .top), count: 4)
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                GroupFilterBar(places: places, selection: $groupFilter,
-                               onDropPlace: selecting ? nil : { group in dropDragged(onGroup: group) })
-                LazyVGrid(columns: columns, alignment: .center, spacing: 22) {
-                    ForEach(visible) { place in
-                        tile(for: place)
-                    }
+        ScrollView {
+            LazyVGrid(columns: columns, alignment: .center, spacing: 22) {
+                ForEach(folders) { g in
+                    folderTile(g)
                 }
-                .padding(.horizontal, 16)
-                .padding(.top, 12)
-                .padding(.bottom, selecting ? 80 : 0)
-            }
-            // 拖到空白处松手、或拖出列表时，结束拖动状态
-            .onDrop(of: [.plainText], delegate: ContainerDropDelegate(drag: drag))
-            .task(id: distanceRefreshKey) {
-                routeDistances.refresh(from: locationManager.location,
-                                       to: visible.map(\.coordinate),
-                                       mode: travelMode)
-            }
-            .overlay {
-                if !places.isEmpty && visible.isEmpty && groupFilter == PlaceGroups.ungrouped {
-                    ContentUnavailableView {
-                        Label("没有未分组的地点", systemImage: "folder.badge.questionmark")
-                    } description: {
-                        Text("所有地点都已经放进分组了。把地点拖到上面的「未分组」标签上，就能把它移出分组。")
-                    }
-                } else if places.isEmpty {
-                    ContentUnavailableView {
-                        Label("还没有地点", systemImage: "mappin.slash")
-                    } description: {
-                        Text("点右上角 + 添加你常去的地方，之后点一下就能用 Google 地图导航。")
-                    } actions: {
-                        Button("添加地点") { showingNew = true }
-                            .buttonStyle(.borderedProminent)
-                    }
+                ForEach(visible) { place in
+                    tile(for: place)
                 }
             }
-            .safeAreaInset(edge: .bottom) {
-                if selecting { batchBar }
-            }
-            .navigationTitle(selecting ? "已选 \(selectedIDs.count) 个" : "HyperGO")
-            .toolbar { toolbarContent }
-            .sheet(isPresented: $showingNew) { PlaceEditorView(place: nil) }
-            .sheet(item: $editingPlace) { PlaceEditorView(place: $0) }
-            .sheet(isPresented: $showingSettings) { SettingsView() }
-            .sheet(isPresented: $showingImport) { ImportPlacesView() }
-            .sheet(isPresented: $showingGroups) { GroupManagerView() }
-            .alert("新建分组", isPresented: Binding(get: { !groupingTargets.isEmpty }, set: { if !$0 { groupingTargets = [] } })) {
-                TextField("分组名称", text: $newGroupText)
-                Button("取消", role: .cancel) { groupingTargets = [] }
-                Button("放进这个分组") {
-                    let name = newGroupText.trimmingCharacters(in: .whitespaces)
-                    if !name.isEmpty { for p in groupingTargets { p.groupName = name } }
-                    groupingTargets = []
-                    endSelecting()
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
+            .padding(.bottom, selecting ? 80 : 0)
+        }
+        // 拖到空白处松手时结束拖动
+        .onDrop(of: [.plainText], delegate: ContainerDropDelegate(drag: drag))
+        .task(id: distanceRefreshKey) {
+            routeDistances.refresh(from: locationManager.location,
+                                   to: visible.map(\.coordinate),
+                                   mode: travelMode)
+        }
+        .overlay { emptyState }
+        .safeAreaInset(edge: .bottom) {
+            if selecting { batchBar }
+        }
+        .navigationTitle(selecting ? "已选 \(selectedIDs.count) 个" : (folder?.name ?? "HyperGO"))
+        .toolbar { toolbarContent }
+        .sheet(isPresented: $showingNew) { PlaceEditorView(place: nil, initialGroup: folder?.name ?? "") }
+        .sheet(item: $editingPlace) { PlaceEditorView(place: $0) }
+        .sheet(isPresented: $showingSettings) { SettingsView() }
+        .sheet(isPresented: $showingImport) { ImportPlacesView() }
+        .sheet(isPresented: $showingGroups) { GroupManagerView() }
+        .sheet(item: $editingFolder) { GroupEditorView(group: $0) }
+        .sheet(isPresented: $showingNewFolder) { GroupEditorView(group: nil) }
+        .sheet(isPresented: $showingMembers) {
+            if let folder {
+                NavigationStack {
+                    GroupMembersView(group: folder)
+                        .toolbar {
+                            ToolbarItem(placement: .cancellationAction) { Button("完成") { showingMembers = false } }
+                        }
                 }
-            } message: {
-                Text(groupingTargets.count == 1
-                     ? "把「\(groupingTargets.first?.name ?? "")」放进新的分组。"
-                     : "把选中的 \(groupingTargets.count) 个地点放进新的分组。")
             }
-            .confirmationDialog("删除 \(selectedIDs.count) 个地点？", isPresented: $confirmingDelete, titleVisibility: .visible) {
-                Button("删除", role: .destructive) {
-                    for p in selectedPlaces { context.delete(p) }
-                    endSelecting()
+        }
+        .sheet(isPresented: Binding(get: { !newGroupTargets.isEmpty }, set: { if !$0 { newGroupTargets = [] } })) {
+            let targets = newGroupTargets
+            GroupEditorView(group: nil) { g in
+                GroupStore.assign(targets, to: g.name, in: context)
+                endSelecting()
+            }
+        }
+        .confirmationDialog("删除 \(selectedIDs.count) 个地点？", isPresented: $confirmingDelete, titleVisibility: .visible) {
+            Button("删除", role: .destructive) {
+                for p in selectedPlaces { context.delete(p) }
+                endSelecting()
+            }
+        } message: {
+            Text("删除后不能恢复。")
+        }
+        .confirmationDialog("删除分组「\(folder?.name ?? "")」？", isPresented: $confirmingDeleteFolder, titleVisibility: .visible) {
+            Button("删除分组", role: .destructive) {
+                if let folder {
+                    dismiss()
+                    GroupStore.delete(folder, places: places, in: context)
                 }
-            } message: {
-                Text("删除后不能恢复。")
+            }
+        } message: {
+            Text("里面的地点不会被删除，会回到首页（未分组）。")
+        }
+    }
+
+    // MARK: 空状态
+
+    @ViewBuilder
+    private var emptyState: some View {
+        if let folder, visible.isEmpty {
+            ContentUnavailableView {
+                Label("「\(folder.name)」是空的", systemImage: "folder")
+            } description: {
+                Text("在首页把地点拖到这个文件夹上，或者点右上角「⋯」→「选择地点」。")
+            } actions: {
+                Button("选择地点") { showingMembers = true }
+                    .buttonStyle(.borderedProminent)
+            }
+        } else if folder == nil && places.isEmpty && groups.isEmpty {
+            ContentUnavailableView {
+                Label("还没有地点", systemImage: "mappin.slash")
+            } description: {
+                Text("点右上角 + 添加你常去的地方，之后点一下就能用 Google 地图导航。")
+            } actions: {
+                Button("添加地点") { showingNew = true }
+                    .buttonStyle(.borderedProminent)
             }
         }
     }
 
-    // MARK: 单个图标
+    // MARK: 文件夹
+
+    @ViewBuilder
+    private func folderTile(_ g: PlaceGroup) -> some View {
+        NavigationLink(value: g) {
+            FolderTile(group: g, members: members(of: g), targeted: targetedFolder == g.id)
+        }
+        .buttonStyle(.plain)
+        .disabled(selecting)
+        .opacity(selecting ? 0.4 : 1)
+        .contextMenu {
+            Button { editingFolder = g } label: { Label("编辑分组", systemImage: "pencil") }
+            Button(role: .destructive) {
+                GroupStore.delete(g, places: places, in: context)
+            } label: { Label("删除分组（保留地点）", systemImage: "trash") }
+        }
+        .onDrop(of: [.plainText], delegate: FolderDropDelegate(group: g, drag: drag, targeted: $targetedFolder) { place in
+            withAnimation(.snappy) { GroupStore.assign([place], to: g.name, in: context) }
+        })
+    }
+
+    // MARK: 单个地点
 
     @ViewBuilder
     private func tile(for place: Place) -> some View {
@@ -148,7 +214,12 @@ struct PlaceListView: View {
     @ViewBuilder
     private func contextMenu(for place: Place) -> some View {
         Button { editingPlace = place } label: { Label("编辑", systemImage: "pencil") }
-        groupMenu(for: [place], title: place.groupName.isEmpty ? "分组" : "分组：\(place.groupName)")
+        groupMenu(for: [place], title: place.groupName.isEmpty ? "放进分组" : "分组：\(place.groupName)")
+        if !place.groupName.isEmpty {
+            Button {
+                withAnimation(.snappy) { GroupStore.assign([place], to: "", in: context) }
+            } label: { Label("移出分组", systemImage: "folder.badge.minus") }
+        }
         Button {
             selecting = true
             selectedIDs = [place.id]
@@ -160,20 +231,20 @@ struct PlaceListView: View {
     @ViewBuilder
     private func groupMenu(for targets: [Place], title: String) -> some View {
         Menu {
-            ForEach(PlaceGroups.names(in: places), id: \.self) { g in
+            ForEach(groups) { g in
                 Button {
-                    for p in targets { p.groupName = g }
+                    withAnimation(.snappy) { GroupStore.assign(targets, to: g.name, in: context) }
                     endSelecting()
                 } label: {
-                    if targets.count == 1 && targets[0].groupName == g { Label(g, systemImage: "checkmark") } else { Text(g) }
+                    if targets.count == 1 && targets[0].groupName == g.name { Label(g.name, systemImage: "checkmark") } else { Text(g.name) }
                 }
             }
-            Button { newGroupText = ""; groupingTargets = targets } label: {
+            Button { newGroupTargets = targets } label: {
                 Label("新建分组…", systemImage: "plus")
             }
             if targets.contains(where: { !$0.groupName.isEmpty }) {
                 Button {
-                    for p in targets { p.groupName = "" }
+                    withAnimation(.snappy) { GroupStore.assign(targets, to: "", in: context) }
                     endSelecting()
                 } label: { Label("移出分组", systemImage: "minus.circle") }
             }
@@ -212,6 +283,23 @@ struct PlaceListView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 Button("完成") { endSelecting() }.bold()
             }
+        } else if let folder {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("选择") { withAnimation { selecting = true } }
+                    .disabled(visible.isEmpty)
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Button { editingFolder = folder } label: { Label("编辑分组（名称、图案、颜色）", systemImage: "pencil") }
+                    Button { showingMembers = true } label: { Label("选择地点", systemImage: "checklist") }
+                    Button { showingNew = true } label: { Label("在这个分组里添加地点", systemImage: "mappin.and.ellipse") }
+                    Button(role: .destructive) { confirmingDeleteFolder = true } label: {
+                        Label("删除分组", systemImage: "trash")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis")
+                }
+            }
         } else {
             ToolbarItem(placement: .topBarLeading) {
                 Button { showingSettings = true } label: {
@@ -220,11 +308,12 @@ struct PlaceListView: View {
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Button("选择") { withAnimation { selecting = true } }
-                    .disabled(places.isEmpty)
+                    .disabled(visible.isEmpty)
             }
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                     Button { showingNew = true } label: { Label("添加地点", systemImage: "mappin.and.ellipse") }
+                    Button { showingNewFolder = true } label: { Label("新建分组", systemImage: "folder.badge.plus") }
                     Button { showingImport = true } label: { Label("批量导入", systemImage: "square.and.arrow.down.on.square") }
                     Button { showingGroups = true } label: { Label("管理分组", systemImage: "folder") }
                 } label: {
@@ -235,6 +324,8 @@ struct PlaceListView: View {
             }
         }
     }
+
+    @State private var showingNewFolder = false
 
     private func endSelecting() {
         drag.end()
@@ -256,13 +347,6 @@ struct PlaceListView: View {
         for (i, p) in items.enumerated() where p.sortIndex != i { p.sortIndex = i }
     }
 
-    /// 把正在拖动的地点放进分组标签对应的分组
-    private func dropDragged(onGroup group: String) {
-        guard let place = drag.source else { return }
-        withAnimation(.snappy) { place.groupName = group }
-        drag.end()
-    }
-
     /// 位置（约 100 米精度）、出行方式或地点变化时重新计算道路距离
     private var distanceRefreshKey: String {
         let loc = locationManager.location.map {
@@ -270,6 +354,35 @@ struct PlaceListView: View {
         } ?? "none"
         let dests = visible.map { RouteDistanceStore.key($0.coordinate) }.joined(separator: ";")
         return "\(loc)|\(travelMode.rawValue)|\(dests)"
+    }
+}
+
+/// 地点拖到文件夹上：高亮，松手放进这个分组
+private struct FolderDropDelegate: DropDelegate {
+    let group: PlaceGroup
+    let drag: DragState
+    @Binding var targeted: PersistentIdentifier?
+    let assign: (Place) -> Void
+
+    func dropEntered(info: DropInfo) {
+        drag.touch()
+        if drag.source != nil { targeted = group.id }
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        drag.touch()
+        return DropProposal(operation: .move)
+    }
+
+    func dropExited(info: DropInfo) {
+        if targeted == group.id { targeted = nil }
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        targeted = nil
+        if let place = drag.source { assign(place) }
+        drag.end()
+        return true
     }
 }
 

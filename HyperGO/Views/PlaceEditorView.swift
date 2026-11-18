@@ -10,6 +10,8 @@ struct PlaceEditorView: View {
     let place: Place?
     /// 新建时可预设位置（例如从地图页添加）
     var initialCoordinate: CLLocationCoordinate2D? = nil
+    /// 新建时预设分组（例如在文件夹里添加）
+    var initialGroup: String = ""
 
     @State private var name = ""
     @State private var icon = "mappin"
@@ -21,7 +23,7 @@ struct PlaceEditorView: View {
     @State private var showingPicker = false
     @State private var loaded = false
     @State private var groupName = ""
-    @Query private var allPlaces: [Place]
+    @Query(sort: \PlaceGroup.sortIndex) private var allGroups: [PlaceGroup]
 
     private var canSave: Bool {
         !name.trimmingCharacters(in: .whitespaces).isEmpty && coordinate != nil
@@ -64,7 +66,7 @@ struct PlaceEditorView: View {
 
                 Section {
                     TextField("不分组", text: $groupName)
-                    let groups = PlaceGroups.names(in: allPlaces)
+                    let groups = allGroups.map(\.name)
                     if !groups.isEmpty {
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 8) {
@@ -162,13 +164,15 @@ struct PlaceEditorView: View {
             coordinate = place.coordinate
             address = place.address
             groupName = place.groupName
-        } else if let initialCoordinate {
-            coordinate = initialCoordinate
+        } else {
+            groupName = initialGroup
+            if let initialCoordinate { coordinate = initialCoordinate }
         }
     }
 
     private func save() {
         guard let coordinate else { return }
+        GroupStore.ensure(groupName, in: context)
         let trimmed = name.trimmingCharacters(in: .whitespaces)
         if let place {
             place.name = trimmed

@@ -10,7 +10,7 @@ struct HyperGOApp: App {
             ContentView()
                 .environment(locationManager)
         }
-        .modelContainer(for: Place.self)
+        .modelContainer(for: [Place.self, PlaceGroup.self])
     }
 }
 
@@ -43,6 +43,7 @@ struct ContentView: View {
             Text(importMessage ?? "")
         }
         .onAppear {
+            GroupStore.migrateLegacy(in: context)
             locationManager.start()
             #if DEBUG
             SampleData.insertIfRequested(into: context)

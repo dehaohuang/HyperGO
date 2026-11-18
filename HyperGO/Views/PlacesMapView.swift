@@ -16,10 +16,15 @@ struct PlacesMapView: View {
     @State private var addingAt: AddRequest?
     /// 隐藏地图自带的兴趣点名称（商店、餐厅等），只留自己的地点
     @AppStorage("hideMapLabels") private var hideMapLabels = false
-    @AppStorage("groupFilter") private var groupFilter = PlaceGroups.all
+    /// 地图页自己的分组筛选（可多选，和路线页互不影响）；空 = 全部
+    @AppStorage("map.groupFilter") private var groupFilterRaw = ""
+    @Query(sort: \PlaceGroup.sortIndex) private var groups: [PlaceGroup]
+    private var groupFilter: Binding<Set<String>> {
+        Binding(get: { PlaceGroups.decode(groupFilterRaw) }, set: { groupFilterRaw = PlaceGroups.encode($0) })
+    }
     @AppStorage("textSize") private var textSize: TextSize = .system
 
-    private var visible: [Place] { PlaceGroups.filter(places, by: groupFilter) }
+    private var visible: [Place] { PlaceGroups.filter(places, by: PlaceGroups.decode(groupFilterRaw)) }
 
     struct AddRequest: Identifiable {
         let id = UUID()
@@ -76,13 +81,13 @@ struct PlacesMapView: View {
                 }
             }
             .safeAreaInset(edge: .top) {
-                GroupFilterBar(places: places, selection: $groupFilter)
+                MultiGroupFilterBar(places: places, groups: groups, selection: groupFilter)
                     .background(.ultraThinMaterial)
             }
             .safeAreaInset(edge: .bottom) {
                 if let selected { card(for: selected) }
             }
-            .onChange(of: groupFilter) {
+            .onChange(of: groupFilterRaw) {
                 // 切换分组后取消选中，并缩放到能看到这一组的所有地点
                 if let s = selected, !visible.contains(s) { selected = nil }
                 withAnimation { camera = .automatic }
