@@ -10,6 +10,7 @@ struct PlaceListView: View {
     @State private var editingPlace: Place?
     @State private var showingNew = false
     @State private var showingSettings = false
+    @State private var routeDistances = RouteDistanceStore()
 
     /// 一排最多 4 个图标
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 12, alignment: .top), count: 4)
@@ -22,7 +23,9 @@ struct PlaceListView: View {
                         Button {
                             GoogleMaps.navigate(to: place.coordinate, mode: travelMode)
                         } label: {
-                            PlaceTile(place: place, distance: locationManager.distance(to: place.coordinate))
+                            PlaceTile(place: place,
+                                      routeDistance: routeDistances.distance(to: place.coordinate),
+                                      straightDistance: locationManager.distance(to: place.coordinate))
                         }
                         .buttonStyle(.plain)
                         .contextMenu {
@@ -42,6 +45,11 @@ struct PlaceListView: View {
                 .padding(.horizontal, 16)
                 .padding(.top, 12)
             }
+            .task(id: distanceRefreshKey) {
+                routeDistances.refresh(from: locationManager.location,
+                                       to: places.map(\.coordinate),
+                                       mode: travelMode)
+            }
             .overlay {
                 if places.isEmpty {
                     ContentUnavailableView {
@@ -58,8 +66,7 @@ struct PlaceListView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button { showingSettings = true } label: {
-                        Label(travelMode.title, systemImage: travelMode.symbol)
-                            .labelStyle(.titleAndIcon)
+                        Label("设置", systemImage: "gearshape")
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
@@ -76,6 +83,15 @@ struct PlaceListView: View {
         context.delete(place)
     }
 
+    /// 位置（约 100 米精度）、出行方式或地点变化时重新计算道路距离
+    private var distanceRefreshKey: String {
+        let loc = locationManager.location.map {
+            String(format: "%.3f,%.3f", $0.coordinate.latitude, $0.coordinate.longitude)
+        } ?? "none"
+        let dests = places.map { RouteDistanceStore.key($0.coordinate) }.joined(separator: ";")
+        return "\(loc)|\(travelMode.rawValue)|\(dests)"
+    }
+
     /// 拖动图标调整顺序：把 from 位置的地点移到 to 位置
     private func move(from: Int, to: Int) {
         guard places.indices.contains(from), places.indices.contains(to) else { return }
@@ -89,7 +105,10 @@ struct PlaceListView: View {
 /// 主屏幕风格的图标：彩色圆形图标 + 名称 + 距离
 struct PlaceTile: View {
     let place: Place
-    let distance: Double?
+    /// 最短实际道路距离（还没算好时为 nil）
+    let routeDistance: Double?
+    /// 直线距离，道路距离算好前先用「≈」显示
+    let straightDistance: Double?
 
     var body: some View {
         VStack(spacing: 6) {
@@ -100,10 +119,16 @@ struct PlaceTile: View {
                 .foregroundStyle(.primary)
                 .lineLimit(1)
                 .truncationMode(.tail)
-            if let distance {
-                Text(Format.distance(distance))
+            if let routeDistance {
+                Text(Format.distance(routeDistance))
                     .font(.caption2)
                     .foregroundStyle(.secondary)
+                    .monospacedDigit()
+                    .lineLimit(1)
+            } else if let straightDistance {
+                Text("≈" + Format.distance(straightDistance))
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
                     .monospacedDigit()
                     .lineLimit(1)
             }
@@ -115,25 +140,11 @@ struct PlaceTile: View {
 
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
-    @AppStorage("travelMode") private var travelMode: TravelMode = .driving
     @AppStorage("textSize") private var textSize: TextSize = .system
 
     var body: some View {
         NavigationStack {
             Form {
-                Section {
-                    Picker("出行方式", selection: $travelMode) {
-                        ForEach(TravelMode.allCases) { mode in
-                            Label(mode.title, systemImage: mode.symbol).tag(mode)
-                        }
-                    }
-                    .pickerStyle(.inline)
-                    .labelsHidden()
-                } header: {
-                    Text("出行方式")
-                } footer: {
-                    Text("打开 Google 地图时使用的默认出行方式。")
-                }
                 Section {
                     Picker("字体大小", selection: $textSize) {
                         ForEach(TextSize.allCases) { size in

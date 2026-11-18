@@ -232,9 +232,7 @@ struct RouteResultView: View {
     /// 逐段向 Apple 地图请求道路路线，用于在地图上画出真实路径
     private func loadRoads() async {
         defer { loadingRoads = false }
-        // 骑行用步行估算，公交逐段路线不稳定，用驾车路线代替画线
-        var type = travelMode.mkTransportType ?? .walking
-        if type == .transit { type = .automobile }
+        let type = travelMode.mkTransportType
         let path = plan.path
         var result: [MKRoute] = []
         for i in 0..<(path.count - 1) {

@@ -12,6 +12,8 @@ struct PlacesMapView: View {
     @State private var eta: (seconds: TimeInterval, meters: Double)?
     @State private var center: CLLocationCoordinate2D?
     @State private var addingAt: AddRequest?
+    /// 隐藏地图自带的兴趣点名称（商店、餐厅等），只留自己的地点
+    @AppStorage("hideMapLabels") private var hideMapLabels = false
 
     struct AddRequest: Identifiable {
         let id = UUID()
@@ -33,6 +35,9 @@ struct PlacesMapView: View {
                     }
                 }
             }
+            .mapStyle(hideMapLabels
+                      ? .standard(emphasis: .muted, pointsOfInterest: .excludingAll)
+                      : .standard)
             .mapControls {
                 MapUserLocationButton()
                 MapCompass()
@@ -57,6 +62,14 @@ struct PlacesMapView: View {
                     Button("全部") {
                         selected = nil
                         withAnimation { camera = .automatic }
+                    }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        withAnimation { hideMapLabels.toggle() }
+                    } label: {
+                        Label(hideMapLabels ? "显示地图文字" : "隐藏地图文字",
+                              systemImage: hideMapLabels ? "eye.slash" : "eye")
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
@@ -123,7 +136,8 @@ struct PlacesMapView: View {
     }
 
     private func loadETA(for place: Place) async {
-        guard let type = travelMode.mkTransportType, locationManager.location != nil else { return }
+        guard locationManager.location != nil else { return }
+        let type = travelMode.mkTransportType
         let request = MKDirections.Request()
         request.source = .forCurrentLocation()
         request.destination = MKMapItem(placemark: MKPlacemark(coordinate: place.coordinate))
