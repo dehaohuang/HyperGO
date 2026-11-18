@@ -97,84 +97,121 @@ enum TSPSolver {
     /// 从最有希望的若干个地点分别出发做最近邻，再局部优化，取总长最短的
     static func bestOfStarts(_ d: [[Double]], _ s: [Double], _ ret: Bool) -> [Int] {
         let n = d.count
-        let tries = min(n, n <= 40 ? n : 12)
+        let tries = n <= 80 ? n : (n <= 300 ? 40 : (n <= 600 ? 10 : 3))
         let seeds = s.indices.sorted { s[$0] < s[$1] }.prefix(tries)
         var best: [Int] = []
         var bestCost = Double.infinity
         for seed in seeds {
-            var order = twoOpt(nearestNeighbor(d, s, first: seed), d, s, ret)
-            order = orOpt(order, d, s, ret)
-            order = twoOpt(order, d, s, ret)
+            let order = improve(nearestNeighbor(d, s, first: seed), d, s, ret)
             let c = cost(order, d, s, ret)
             if c < bestCost { bestCost = c; best = order }
         }
         return best
     }
 
-    /// Or-opt：把长度 1–3 的一小段挪到别的位置，能缩短就挪
-    static func orOpt(_ initial: [Int], _ d: [[Double]], _ s: [Double], _ ret: Bool) -> [Int] {
+    /// 轮流做 2-opt 和 Or-opt，直到两者都改不动
+    static func improve(_ initial: [Int], _ d: [[Double]], _ s: [Double], _ ret: Bool) -> [Int] {
         var order = initial
-        var best = cost(order, d, s, ret)
+        while true {
+            let a = twoOptPass(&order, d, s, ret)
+            let b = orOptPass(&order, d, s, ret)
+            if !a && !b { return order }
+        }
+    }
+
+    /// 两点之间的距离；-1 表示路线的起点/终点（起点到地点用 s，终点只有「回到起点」时才计距离）
+    @inline(__always)
+    private static func edge(_ a: Int, _ b: Int, _ d: [[Double]], _ s: [Double], _ ret: Bool) -> Double {
+        if a < 0 { return b < 0 ? 0 : s[b] }
+        if b < 0 { return ret ? s[a] : 0 }
+        return d[a][b]
+    }
+
+    /// 2-opt：把一段路线倒过来走，能缩短就倒。只算两头变化的边，不重算整条路线
+    @discardableResult
+    static func twoOptPass(_ order: inout [Int], _ d: [[Double]], _ s: [Double], _ ret: Bool) -> Bool {
+        let n = order.count
+        guard n >= 3 else { return false }
+        var any = false
         var improved = true
         while improved {
             improved = false
-            for len in 1...3 where len < order.count {
-                for i in 0...(order.count - len) {
-                    let segment = Array(order[i..<(i + len)])
-                    var rest = order
-                    rest.removeSubrange(i..<(i + len))
-                    for j in 0...rest.count where j != i {
-                        var candidate = rest
-                        candidate.insert(contentsOf: segment, at: j)
-                        let c = cost(candidate, d, s, ret)
-                        if c + 1e-9 < best {
-                            order = candidate
-                            best = c
-                            improved = true
-                            break
-                        }
+            for i in 0..<(n - 1) {
+                let p = i == 0 ? -1 : order[i - 1]
+                let a = order[i]
+                let removedP = edge(p, a, d, s, ret)
+                for k in (i + 1)..<n {
+                    let b = order[k]
+                    let q = k == n - 1 ? -1 : order[k + 1]
+                    let delta = edge(p, b, d, s, ret) + edge(a, q, d, s, ret) - removedP - edge(b, q, d, s, ret)
+                    if delta < -1e-7 {
+                        order[i...k].reverse()
+                        improved = true
+                        any = true
+                        break
                     }
-                    if improved { break }
                 }
-                if improved { break }
             }
         }
-        return order
+        return any
+    }
+
+    /// Or-opt：把 1–3 个连续地点挪到别处（也试倒序放），能缩短就挪。同样只算变化的边
+    @discardableResult
+    static func orOptPass(_ order: inout [Int], _ d: [[Double]], _ s: [Double], _ ret: Bool) -> Bool {
+        let n = order.count
+        guard n >= 3 else { return false }
+        var any = false
+        var improved = true
+        while improved {
+            improved = false
+            outer: for len in 1...3 where len < n {
+                for i in 0...(n - len) {
+                    let p = i == 0 ? -1 : order[i - 1]
+                    let a = order[i], b = order[i + len - 1]
+                    let q = i + len == n ? -1 : order[i + len]
+                    let gain = edge(p, a, d, s, ret) + edge(b, q, d, s, ret) - edge(p, q, d, s, ret)
+                    // 插到原来的 order[g-1] 和 order[g] 之间（g = 0 是最前面，g = n 是最后面）
+                    for g in 0...n where g < i || g > i + len {
+                        let u = g == 0 ? -1 : order[g - 1]
+                        let v = g == n ? -1 : order[g]
+                        let base = edge(u, v, d, s, ret)
+                        let forward = edge(u, a, d, s, ret) + edge(b, v, d, s, ret) - base
+                        let backward = edge(u, b, d, s, ret) + edge(a, v, d, s, ret) - base
+                        let add = min(forward, backward)
+                        if add - gain < -1e-7 {
+                            var seg = Array(order[i..<(i + len)])
+                            if backward < forward { seg.reverse() }
+                            order.removeSubrange(i..<(i + len))
+                            order.insert(contentsOf: seg, at: g < i ? g : g - len)
+                            improved = true
+                            any = true
+                            break outer
+                        }
+                    }
+                }
+            }
+        }
+        return any
     }
 
     static func nearestNeighbor(_ d: [[Double]], _ s: [Double], first: Int? = nil) -> [Int] {
         let n = d.count
-        var visited = Set<Int>()
+        var visited = [Bool](repeating: false, count: n)
         var current = first ?? s.indices.min(by: { s[$0] < s[$1] })!
         var order = [current]
-        visited.insert(current)
+        order.reserveCapacity(n)
+        visited[current] = true
         while order.count < n {
-            let next = (0..<n).filter { !visited.contains($0) }.min(by: { d[current][$0] < d[current][$1] })!
-            order.append(next)
-            visited.insert(next)
-            current = next
-        }
-        return order
-    }
-
-    static func twoOpt(_ initial: [Int], _ d: [[Double]], _ s: [Double], _ ret: Bool) -> [Int] {
-        var order = initial
-        var best = cost(order, d, s, ret)
-        var improved = true
-        while improved {
-            improved = false
-            for i in 0..<(order.count - 1) {
-                for k in (i + 1)..<order.count {
-                    var candidate = order
-                    candidate[i...k].reverse()
-                    let c = cost(candidate, d, s, ret)
-                    if c + 1e-9 < best {
-                        order = candidate
-                        best = c
-                        improved = true
-                    }
-                }
+            var next = -1
+            var bestD = Double.infinity
+            for j in 0..<n where !visited[j] && d[current][j] < bestD {
+                bestD = d[current][j]
+                next = j
             }
+            order.append(next)
+            visited[next] = true
+            current = next
         }
         return order
     }

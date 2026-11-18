@@ -468,8 +468,6 @@ struct PlaceBoard: View {
                     Button { showingGroups = true } label: { Label("管理分组", systemImage: "folder") }
                 } label: {
                     Image(systemName: "plus")
-                } primaryAction: {
-                    showingNew = true
                 }
             }
         }
