@@ -21,5 +21,7 @@ iOS 上的「快捷导航」App：
 - 2026-11-17：已在本机（Xcode 27.2）用 iPhone 18 Pro 模拟器（iOS 27.2）编译通过，无需改代码，App 能正常启动（首页「地点」+ 地图/路线标签，定位权限提示正常）。
 - 本机没有 Homebrew：xcodegen 2.47.0 是从 GitHub 官方发布页下载的，路径 `~/.local/xcodegen-dl/xcodegen/bin/xcodegen`。`HyperGO/Info.plist` 由 xcodegen 生成，不入库。GitHub CLI 2.105.0 在 `~/.local/gh-dl/gh_2.105.0_macOS_arm64/bin/gh`，已登录并配置为 git 凭据，可直接 `git push`。
 - 编译命令：`xcodebuild -project HyperGO.xcodeproj -scheme HyperGO -destination 'platform=iOS Simulator,name=iPhone 18 Pro' -derivedDataPath build build`
-- 下一步：帮用户装到真机：Xcode 登录 Apple ID、Team 选 Personal Team、Bundle ID 改为唯一值（如 `com.dehaohuang.hypergo`）、iPhone 开启开发者模式并信任证书。
+- 2026-11-17：已装到用户的 iPhone 11 Pro Max（Redbird's iPhone，UDID 00008030-001648DA0151802E），已配对、开发者模式已开、证书已信任，App 能正常打开。Bundle ID `com.dehaohuang.hypergo`，Personal Team `AG35R2KFF7`（已写入 project.yml）。
+- 重新安装（7 天到期后）：同一 Wi‑Fi 下手机解锁，`xcodebuild -project HyperGO.xcodeproj -scheme HyperGO -destination 'generic/platform=iOS' -derivedDataPath build -allowProvisioningUpdates build` → `xcrun devicectl device install app --device 00008030-001648DA0151802E build/Build/Products/Debug-iphoneos/HyperGO.app`。新版 Xcode 没有「Connect via network」勾选框，配对后自动无线。
+- （已完成）装到真机的步骤：Xcode 登录 Apple ID、Team 选 Personal Team、Bundle ID 改为唯一值（如 `com.dehaohuang.hypergo`）、iPhone 开启开发者模式并信任证书。
 - 以后可能加的功能：桌面小组件、Siri 快捷指令、地点分组。

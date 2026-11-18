@@ -29,6 +29,7 @@ targets:
     settings:
       base:
         # 免费 Apple ID 要求 Bundle ID 全球唯一，请改成你自己的，例如 com.你的名字.hypergo
-        PRODUCT_BUNDLE_IDENTIFIER: com.yourname.hypergo
+        PRODUCT_BUNDLE_IDENTIFIER: com.dehaohuang.hypergo
         CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: AG35R2KFF7
         TARGETED_DEVICE_FAMILY: "1"
