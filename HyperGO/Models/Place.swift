@@ -13,6 +13,8 @@ final class Place {
     var address: String
     var sortIndex: Int
     var createdAt: Date
+    /// 所属分组名称；空字符串表示未分组（带默认值，旧数据可自动迁移）
+    var groupName: String = ""
 
     init(name: String,
          icon: String = "mappin",
@@ -20,7 +22,8 @@ final class Place {
          latitude: Double,
          longitude: Double,
          address: String = "",
-         sortIndex: Int = 0) {
+         sortIndex: Int = 0,
+         groupName: String = "") {
         self.name = name
         self.icon = icon
         self.colorHex = colorHex
@@ -29,6 +32,7 @@ final class Place {
         self.address = address
         self.sortIndex = sortIndex
         self.createdAt = .now
+        self.groupName = groupName
     }
 
     var coordinate: CLLocationCoordinate2D {

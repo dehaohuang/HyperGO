@@ -14,6 +14,9 @@ struct PlacesMapView: View {
     @State private var addingAt: AddRequest?
     /// 隐藏地图自带的兴趣点名称（商店、餐厅等），只留自己的地点
     @AppStorage("hideMapLabels") private var hideMapLabels = false
+    @AppStorage("groupFilter") private var groupFilter = PlaceGroups.all
+
+    private var visible: [Place] { PlaceGroups.filter(places, by: groupFilter) }
 
     struct AddRequest: Identifiable {
         let id = UUID()
@@ -24,7 +27,7 @@ struct PlacesMapView: View {
         NavigationStack {
             Map(position: $camera) {
                 UserAnnotation()
-                ForEach(places) { place in
+                ForEach(visible) { place in
                     Annotation(place.name, coordinate: place.coordinate) {
                         PlaceIconView(icon: place.icon, colorHex: place.colorHex,
                                       size: selected?.id == place.id ? 42 : 32)
@@ -52,8 +55,17 @@ struct PlacesMapView: View {
                         .allowsHitTesting(false)
                 }
             }
+            .safeAreaInset(edge: .top) {
+                GroupFilterBar(places: places, selection: $groupFilter)
+                    .background(.ultraThinMaterial)
+            }
             .safeAreaInset(edge: .bottom) {
                 if let selected { card(for: selected) }
+            }
+            .onChange(of: groupFilter) {
+                // 切换分组后取消选中，并缩放到能看到这一组的所有地点
+                if let s = selected, !visible.contains(s) { selected = nil }
+                withAnimation { camera = .automatic }
             }
             .navigationTitle("地图")
             .navigationBarTitleDisplayMode(.inline)

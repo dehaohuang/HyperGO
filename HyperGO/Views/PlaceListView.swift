@@ -12,6 +12,14 @@ struct PlaceListView: View {
     @State private var showingSettings = false
     @State private var showingImport = false
     @State private var routeDistances = RouteDistanceStore()
+    @State private var showingGroups = false
+    @AppStorage("groupFilter") private var groupFilter = PlaceGroups.all
+    /// 长按菜单里「新建分组…」时正在处理的地点
+    @State private var groupingPlace: Place?
+    @State private var newGroupText = ""
+
+    /// 按分组筛选后要显示的地点
+    private var visible: [Place] { PlaceGroups.filter(places, by: groupFilter) }
 
     /// 一排最多 4 个图标
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 12, alignment: .top), count: 4)
@@ -19,8 +27,9 @@ struct PlaceListView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
+                GroupFilterBar(places: places, selection: $groupFilter)
                 LazyVGrid(columns: columns, alignment: .center, spacing: 22) {
-                    ForEach(Array(places.enumerated()), id: \.element.id) { index, place in
+                    ForEach(Array(visible.enumerated()), id: \.element.id) { index, place in
                         Button {
                             GoogleMaps.navigate(to: place.coordinate, mode: travelMode)
                         } label: {
@@ -31,6 +40,25 @@ struct PlaceListView: View {
                         .buttonStyle(.plain)
                         .contextMenu {
                             Button { editingPlace = place } label: { Label("编辑", systemImage: "pencil") }
+                            Menu {
+                                ForEach(PlaceGroups.names(in: places), id: \.self) { g in
+                                    Button {
+                                        place.groupName = g
+                                    } label: {
+                                        if place.groupName == g { Label(g, systemImage: "checkmark") } else { Text(g) }
+                                    }
+                                }
+                                Button { newGroupText = ""; groupingPlace = place } label: {
+                                    Label("新建分组…", systemImage: "plus")
+                                }
+                                if !place.groupName.isEmpty {
+                                    Button { place.groupName = "" } label: {
+                                        Label("移出分组", systemImage: "minus.circle")
+                                    }
+                                }
+                            } label: {
+                                Label(place.groupName.isEmpty ? "分组" : "分组：\(place.groupName)", systemImage: "folder")
+                            }
                             Button(role: .destructive) { delete(place) } label: { Label("删除", systemImage: "trash") }
                         }
                         .draggable(String(index)) {
@@ -48,7 +76,7 @@ struct PlaceListView: View {
             }
             .task(id: distanceRefreshKey) {
                 routeDistances.refresh(from: locationManager.location,
-                                       to: places.map(\.coordinate),
+                                       to: visible.map(\.coordinate),
                                        mode: travelMode)
             }
             .overlay {
@@ -74,6 +102,7 @@ struct PlaceListView: View {
                     Menu {
                         Button { showingNew = true } label: { Label("添加地点", systemImage: "mappin.and.ellipse") }
                         Button { showingImport = true } label: { Label("批量导入", systemImage: "square.and.arrow.down.on.square") }
+                        Button { showingGroups = true } label: { Label("管理分组", systemImage: "folder") }
                     } label: {
                         Image(systemName: "plus")
                     } primaryAction: {
@@ -85,6 +114,18 @@ struct PlaceListView: View {
             .sheet(item: $editingPlace) { PlaceEditorView(place: $0) }
             .sheet(isPresented: $showingSettings) { SettingsView() }
             .sheet(isPresented: $showingImport) { ImportPlacesView() }
+            .sheet(isPresented: $showingGroups) { GroupManagerView() }
+            .alert("新建分组", isPresented: Binding(get: { groupingPlace != nil }, set: { if !$0 { groupingPlace = nil } })) {
+                TextField("分组名称", text: $newGroupText)
+                Button("取消", role: .cancel) { groupingPlace = nil }
+                Button("放进这个分组") {
+                    let name = newGroupText.trimmingCharacters(in: .whitespaces)
+                    if !name.isEmpty { groupingPlace?.groupName = name }
+                    groupingPlace = nil
+                }
+            } message: {
+                Text("把「\(groupingPlace?.name ?? "")」放进新的分组。")
+            }
         }
     }
 
@@ -97,16 +138,19 @@ struct PlaceListView: View {
         let loc = locationManager.location.map {
             String(format: "%.3f,%.3f", $0.coordinate.latitude, $0.coordinate.longitude)
         } ?? "none"
-        let dests = places.map { RouteDistanceStore.key($0.coordinate) }.joined(separator: ";")
+        let dests = visible.map { RouteDistanceStore.key($0.coordinate) }.joined(separator: ";")
         return "\(loc)|\(travelMode.rawValue)|\(dests)"
     }
 
-    /// 拖动图标调整顺序：把 from 位置的地点移到 to 位置
+    /// 拖动图标调整顺序：from / to 是当前显示（筛选后）列表里的位置
     private func move(from: Int, to: Int) {
-        guard places.indices.contains(from), places.indices.contains(to) else { return }
+        let shown = visible
+        guard shown.indices.contains(from), shown.indices.contains(to),
+              let src = places.firstIndex(of: shown[from]),
+              let dst = places.firstIndex(of: shown[to]) else { return }
         var items = places
-        let item = items.remove(at: from)
-        items.insert(item, at: to)
+        let item = items.remove(at: src)
+        items.insert(item, at: dst)
         for (i, item) in items.enumerated() { item.sortIndex = i }
     }
 }

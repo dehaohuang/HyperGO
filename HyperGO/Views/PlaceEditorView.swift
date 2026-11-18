@@ -20,6 +20,8 @@ struct PlaceEditorView: View {
     @State private var emojiInput = ""
     @State private var showingPicker = false
     @State private var loaded = false
+    @State private var groupName = ""
+    @Query private var allPlaces: [Place]
 
     private var canSave: Bool {
         !name.trimmingCharacters(in: .whitespaces).isEmpty && coordinate != nil
@@ -58,6 +60,26 @@ struct PlaceEditorView: View {
                     } label: {
                         Label(coordinate == nil ? "选择位置" : "重新选择位置", systemImage: "mappin.and.ellipse")
                     }
+                }
+
+                Section {
+                    TextField("不分组", text: $groupName)
+                    let groups = PlaceGroups.names(in: allPlaces)
+                    if !groups.isEmpty {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                ForEach(groups, id: \.self) { g in
+                                    GroupChip(title: g, selected: groupName == g) {
+                                        groupName = (groupName == g) ? "" : g
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } header: {
+                    Text("分组")
+                } footer: {
+                    Text("输入新的分组名称，或点下面已有的分组。留空就是不分组。")
                 }
 
                 Section("图标") {
@@ -139,6 +161,7 @@ struct PlaceEditorView: View {
             colorHex = place.colorHex
             coordinate = place.coordinate
             address = place.address
+            groupName = place.groupName
         } else if let initialCoordinate {
             coordinate = initialCoordinate
         }
@@ -154,11 +177,13 @@ struct PlaceEditorView: View {
             place.latitude = coordinate.latitude
             place.longitude = coordinate.longitude
             place.address = address
+            place.groupName = groupName.trimmingCharacters(in: .whitespaces)
         } else {
             let count = (try? context.fetchCount(FetchDescriptor<Place>())) ?? 0
             context.insert(Place(name: trimmed, icon: icon, colorHex: colorHex,
                                  latitude: coordinate.latitude, longitude: coordinate.longitude,
-                                 address: address, sortIndex: count))
+                                 address: address, sortIndex: count,
+                                 groupName: groupName.trimmingCharacters(in: .whitespaces)))
         }
         dismiss()
     }

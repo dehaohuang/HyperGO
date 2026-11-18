@@ -50,6 +50,7 @@ enum PlaceImporter {
 
     /// 导入文本；near 用于地址查询时优先匹配附近（一般传当前位置）
     static func importText(_ text: String, into context: ModelContext, near: CLLocation?,
+                           groupName: String = "",
                            progress: ((Int, Int) -> Void)? = nil) async -> Result {
         let entries = parse(text)
         var result = Result()
@@ -78,7 +79,8 @@ enum PlaceImporter {
             let color = Presets.colors[nextIndex % Presets.colors.count]
             context.insert(Place(name: entry.name, icon: "person.fill", colorHex: color,
                                  latitude: coordinate.latitude, longitude: coordinate.longitude,
-                                 address: entry.address, sortIndex: nextIndex))
+                                 address: entry.address, sortIndex: nextIndex,
+                                 groupName: groupName))
             nextIndex += 1
             known.insert(k)
             result.added.append(entry.name)

@@ -8,6 +8,7 @@ struct ImportPlacesView: View {
     @Environment(LocationManager.self) private var locationManager
 
     @State private var text = ""
+    @State private var groupName = ""
     @State private var running = false
     @State private var progress = (done: 0, total: 0)
     @State private var result: PlaceImporter.Result?
@@ -24,6 +25,12 @@ struct ImportPlacesView: View {
                     Text("粘贴名单")
                 } footer: {
                     Text("每行一个地点：名称和地址之间用 Tab 隔开（从表格里复制就是这样），或者用两个以上空格隔开。已经存在的同名同地址地点会自动跳过。")
+                }
+                Section {
+                    TextField("不分组", text: $groupName)
+                        .disabled(running)
+                } header: {
+                    Text("导入到分组（可选）")
                 }
                 if running {
                     Section {
@@ -56,7 +63,8 @@ struct ImportPlacesView: View {
     private func runImport() async {
         running = true
         result = nil
-        let r = await PlaceImporter.importText(text, into: context, near: locationManager.location) { done, total in
+        let r = await PlaceImporter.importText(text, into: context, near: locationManager.location,
+                                               groupName: groupName.trimmingCharacters(in: .whitespaces)) { done, total in
             progress = (done, total)
         }
         result = r

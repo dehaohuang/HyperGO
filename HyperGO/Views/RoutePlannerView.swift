@@ -13,12 +13,22 @@ struct RoutePlannerView: View {
     @AppStorage("route.fromCurrent") private var fromCurrentLocation = true
     @AppStorage("route.returnToStart") private var returnToStart = false
     @State private var plan: RoutePlan?
+    @AppStorage("groupFilter") private var groupFilter = PlaceGroups.all
+
+    private var visible: [Place] { PlaceGroups.filter(places, by: groupFilter) }
 
     private var selectedPlaces: [Place] { places.filter { selection.contains($0.id) } }
 
     var body: some View {
         NavigationStack {
             List {
+                if !PlaceGroups.names(in: places).isEmpty {
+                    Section {
+                        GroupFilterBar(places: places, selection: $groupFilter)
+                            .listRowInsets(EdgeInsets())
+                            .listRowBackground(Color.clear)
+                    }
+                }
                 Section {
                     Toggle("从当前位置出发", isOn: $fromCurrentLocation)
                     Toggle("最后回到出发点", isOn: $returnToStart)
@@ -30,7 +40,7 @@ struct RoutePlannerView: View {
                 }
 
                 Section {
-                    ForEach(places) { place in
+                    ForEach(visible) { place in
                         Button { toggle(place) } label: {
                             HStack(spacing: 12) {
                                 Image(systemName: selection.contains(place.id) ? "checkmark.circle.fill" : "circle")
@@ -50,6 +60,9 @@ struct RoutePlannerView: View {
                     HStack {
                         Text("选择要去的地点（\(selection.count)/\(maxStops)）")
                         Spacer()
+                        if selection.count < maxStops && visible.contains(where: { !selection.contains($0.id) }) {
+                            Button("全选") { selectAllVisible() }.font(.caption)
+                        }
                         if !selection.isEmpty {
                             Button("清空") { selection.removeAll() }.font(.caption)
                         }
@@ -82,6 +95,11 @@ struct RoutePlannerView: View {
         let needed = fromCurrentLocation ? 1 : 2
         if fromCurrentLocation && locationManager.location == nil { return false }
         return selection.count >= needed
+    }
+
+    /// 选中当前分组里的地点，最多到 maxStops 个
+    private func selectAllVisible() {
+        for p in visible where selection.count < maxStops { selection.insert(p.id) }
     }
 
     private func toggle(_ place: Place) {
