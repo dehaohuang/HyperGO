@@ -10,6 +10,10 @@ iOS 上的「快捷导航」App（只支持驾车）：
 1. **地点**（首页）：分组显示成文件夹大图标，和未分组地点混排、都能拖动换位置（可自定义名称、图案、颜色，默认显示组内 4 个地点预览）；一排 4 个图标，图标下显示最短道路距离；点地点用 Google 地图导航；长按后拖动排序（图标跟手、其他图标动画让位、松手立即归位）、拖到文件夹上归组、长按不动松手弹出菜单、多选批量操作、批量导入。
 2. **地图**：MapKit 显示地点（名称自绘、按屏幕避让），可隐藏地图兴趣点文字；分组筛选可多选，和路线页互相独立。
 3. **路线**：分组多选筛选，不限数量选地点，算最短访问顺序（≤12 点 Held-Karp 精确解，更多点多起点最近邻 + 2-opt + Or-opt），按导航 App 的站数上限自动分段（Apple 地图/Waze 逐站）导航。
+4. **加油**：附近加油站地图 + 列表，点就导航；下方「性价比最高」推荐（油价 × 加油升数 + 来回路上的油费，总花费最少）。`Services/GasStationService.swift` + `Views/GasStationsView.swift`。
+   - 有 Google 密钥（用户在加油页设置里自己填，存 UserDefaults `googlePlacesKey`，不入库）→ Places API (New) `searchNearby` 带 `fuelOptions` 实时油价，20 分钟/1.5 公里内用缓存，记录本月调用次数（前 1000 次免费）。
+   - 没密钥或出错 → Apple 地图 `MKLocalPointsOfInterestRequest` 找加油站（没有油价），按距离推荐，并提供「在 Google 地图里看附近油价」按钮。
+   - GasBuddy 没有公开接口，不要去抓取。调试可用启动参数 `-mockFuelPrices` 编假油价看界面。
 - Siri / 快捷指令（App Intents，免费账号可用，`Services/SiriIntents.swift`）：「用 HyperGO 导航到某地点」「用 HyperGO 规划某分组路线」；地点、分组名称在 App 回到前台/进后台时同步给 Siri。
 - 设置：字体大小（只影响首页图标文字和地图地点名称）；导航 App（Google 地图 / Apple 地图 / Waze，只列已安装的，Google 没装用网页版）。
 - 数据：SwiftData，`Place`（groupName 关联分组名）+ `PlaceGroup`（name/icon/colorHex/sortIndex）。
