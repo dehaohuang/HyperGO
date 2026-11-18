@@ -3,7 +3,7 @@ import CoreLocation
 
 /// 求经过所有选中地点的最短顺序（旅行商问题）。
 /// - 12 个点以内：Held-Karp 动态规划，保证最优
-/// - 更多点：最近邻 + 2-opt 近似
+/// - 更多点：多个起点的最近邻 + 2-opt + Or-opt 局部优化，取最好的一条（近似最优）
 enum RouteOptimizer {
     struct Result {
         /// points 的下标，按访问顺序
@@ -39,7 +39,7 @@ enum TSPSolver {
         guard n > 0 else { return .init(order: [], totalMeters: 0) }
         let order = n <= 12
             ? heldKarp(d, s, returnToStart)
-            : twoOpt(nearestNeighbor(d, s), d, s, returnToStart)
+            : bestOfStarts(d, s, returnToStart)
         return .init(order: order, totalMeters: cost(order, d, s, returnToStart))
     }
 
@@ -94,10 +94,58 @@ enum TSPSolver {
         return order.reversed()
     }
 
-    static func nearestNeighbor(_ d: [[Double]], _ s: [Double]) -> [Int] {
+    /// 从最有希望的若干个地点分别出发做最近邻，再局部优化，取总长最短的
+    static func bestOfStarts(_ d: [[Double]], _ s: [Double], _ ret: Bool) -> [Int] {
+        let n = d.count
+        let tries = min(n, n <= 40 ? n : 12)
+        let seeds = s.indices.sorted { s[$0] < s[$1] }.prefix(tries)
+        var best: [Int] = []
+        var bestCost = Double.infinity
+        for seed in seeds {
+            var order = twoOpt(nearestNeighbor(d, s, first: seed), d, s, ret)
+            order = orOpt(order, d, s, ret)
+            order = twoOpt(order, d, s, ret)
+            let c = cost(order, d, s, ret)
+            if c < bestCost { bestCost = c; best = order }
+        }
+        return best
+    }
+
+    /// Or-opt：把长度 1–3 的一小段挪到别的位置，能缩短就挪
+    static func orOpt(_ initial: [Int], _ d: [[Double]], _ s: [Double], _ ret: Bool) -> [Int] {
+        var order = initial
+        var best = cost(order, d, s, ret)
+        var improved = true
+        while improved {
+            improved = false
+            for len in 1...3 where len < order.count {
+                for i in 0...(order.count - len) {
+                    let segment = Array(order[i..<(i + len)])
+                    var rest = order
+                    rest.removeSubrange(i..<(i + len))
+                    for j in 0...rest.count where j != i {
+                        var candidate = rest
+                        candidate.insert(contentsOf: segment, at: j)
+                        let c = cost(candidate, d, s, ret)
+                        if c + 1e-9 < best {
+                            order = candidate
+                            best = c
+                            improved = true
+                            break
+                        }
+                    }
+                    if improved { break }
+                }
+                if improved { break }
+            }
+        }
+        return order
+    }
+
+    static func nearestNeighbor(_ d: [[Double]], _ s: [Double], first: Int? = nil) -> [Int] {
         let n = d.count
         var visited = Set<Int>()
-        var current = s.indices.min(by: { s[$0] < s[$1] })!
+        var current = first ?? s.indices.min(by: { s[$0] < s[$1] })!
         var order = [current]
         visited.insert(current)
         while order.count < n {

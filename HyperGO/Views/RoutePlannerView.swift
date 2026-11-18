@@ -2,9 +2,6 @@ import SwiftUI
 import SwiftData
 import MapKit
 
-/// Google 地图 URL 最多支持约 9 个途经点 + 1 个终点
-private let maxStops = 10
-
 struct RoutePlannerView: View {
     @Environment(LocationManager.self) private var locationManager
     @Query(sort: \Place.sortIndex) private var places: [Place]
@@ -13,6 +10,7 @@ struct RoutePlannerView: View {
     @AppStorage("route.fromCurrent") private var fromCurrentLocation = true
     @AppStorage("route.returnToStart") private var returnToStart = false
     @State private var plan: RoutePlan?
+    @State private var computing = false
     @AppStorage("groupFilter") private var groupFilter = PlaceGroups.all
 
     private var visible: [Place] { PlaceGroups.filter(places, by: groupFilter) }
@@ -58,9 +56,9 @@ struct RoutePlannerView: View {
                     }
                 } header: {
                     HStack {
-                        Text("选择要去的地点（\(selection.count)/\(maxStops)）")
+                        Text("选择要去的地点（已选 \(selection.count) 个）")
                         Spacer()
-                        if selection.count < maxStops && visible.contains(where: { !selection.contains($0.id) }) {
+                        if visible.contains(where: { !selection.contains($0.id) }) {
                             Button("全选") { selectAllVisible() }.font(.caption)
                         }
                         if !selection.isEmpty {
@@ -76,13 +74,21 @@ struct RoutePlannerView: View {
                 }
             }
             .safeAreaInset(edge: .bottom) {
-                Button(action: compute) {
-                    Label("计算最短路线", systemImage: "point.topleft.down.to.point.bottomright.curvepath.fill")
-                        .frame(maxWidth: .infinity)
+                Button { Task { await compute() } } label: {
+                    if computing {
+                        HStack(spacing: 8) { ProgressView(); Text("正在计算最短顺序…") }
+                            .frame(maxWidth: .infinity)
+                    } else {
+                        Label(selection.count > GoogleMaps.maxStopsPerRoute
+                              ? "计算最短路线（\(selection.count) 个地点，自动分段）"
+                              : "计算最短路线",
+                              systemImage: "point.topleft.down.to.point.bottomright.curvepath.fill")
+                            .frame(maxWidth: .infinity)
+                    }
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
-                .disabled(!canCompute)
+                .disabled(!canCompute || computing)
                 .padding()
                 .background(.bar)
             }
@@ -97,24 +103,30 @@ struct RoutePlannerView: View {
         return selection.count >= needed
     }
 
-    /// 选中当前分组里的地点，最多到 maxStops 个
+    /// 选中当前分组里的全部地点
     private func selectAllVisible() {
-        for p in visible where selection.count < maxStops { selection.insert(p.id) }
+        for p in visible { selection.insert(p.id) }
     }
 
     private func toggle(_ place: Place) {
         if selection.contains(place.id) {
             selection.remove(place.id)
-        } else if selection.count < maxStops {
+        } else {
             selection.insert(place.id)
         }
     }
 
-    private func compute() {
+    /// 在后台计算，地点很多时界面也不会卡
+    private func compute() async {
         let stops = selectedPlaces
+        let coords = stops.map(\.coordinate)
         let start = fromCurrentLocation ? locationManager.location?.coordinate : nil
         let ret = fromCurrentLocation && returnToStart
-        let result = RouteOptimizer.optimize(points: stops.map(\.coordinate), start: start, returnToStart: ret)
+        computing = true
+        let result = await Task.detached(priority: .userInitiated) {
+            RouteOptimizer.optimize(points: coords, start: start, returnToStart: ret)
+        }.value
+        computing = false
         plan = RoutePlan(stops: result.order.map { stops[$0] }, start: start,
                          returnToStart: ret, straightMeters: result.totalMeters)
     }
@@ -126,6 +138,44 @@ struct RoutePlan: Identifiable {
     let start: CLLocationCoordinate2D?
     let returnToStart: Bool
     let straightMeters: Double
+
+    /// 一段 Google 地图导航：origin 为 nil 表示从当前位置出发
+    struct Segment: Identifiable {
+        let id: Int
+        let origin: CLLocationCoordinate2D?
+        let stops: [CLLocationCoordinate2D]
+        /// 本段在访问顺序里的站号范围（从 1 开始；「回到出发点」记为最后一站之后）
+        let firstNumber: Int
+        let lastNumber: Int
+    }
+
+    /// 按 Google 地图的上限切成几段；第 2 段起从当时所在位置（上一段终点）出发
+    var segments: [Segment] {
+        var destinations = stops.map(\.coordinate)
+        var origin: CLLocationCoordinate2D? = nil
+        var number = 1
+        if start == nil, let first = destinations.first {
+            origin = first
+            destinations.removeFirst()
+            number = 2
+        }
+        if returnToStart, let start { destinations.append(start) }
+        var result: [Segment] = []
+        var i = 0
+        while i < destinations.count {
+            let chunk = Array(destinations[i..<min(i + GoogleMaps.maxStopsPerRoute, destinations.count)])
+            result.append(Segment(id: result.count, origin: result.isEmpty ? origin : nil, stops: chunk,
+                                  firstNumber: number, lastNumber: number + chunk.count - 1))
+            number += chunk.count
+            i += chunk.count
+        }
+        return result
+    }
+
+    /// 第 n 站（从 1 开始）的名称；超出地点数时是「出发点」
+    func stopName(_ number: Int) -> String {
+        number >= 1 && number <= stops.count ? stops[number - 1].name : "出发点"
+    }
 
     /// 依次经过的所有坐标（含起点/返回点）
     var path: [CLLocationCoordinate2D] {
@@ -143,20 +193,29 @@ struct RouteResultView: View {
     @AppStorage("travelMode") private var travelMode: TravelMode = .driving
     let plan: RoutePlan
 
-    @State private var roads: [MKRoute] = []
+    /// 每一段路（相邻两站之间）的道路路线；算不出来的为 nil
+    @State private var roads: [MKRoute?] = []
     @State private var loadingRoads = true
+    /// 已经点过「导航」的分段
+    @State private var startedSegments = Set<Int>()
+
+    private var legCount: Int { plan.path.count - 1 }
+    private var loadedRoads: [MKRoute] { roads.compactMap { $0 } }
+    private var allRoadsLoaded: Bool { roads.count == legCount && loadedRoads.count == legCount }
 
     var body: some View {
         NavigationStack {
             List {
                 Section {
                     Map(initialPosition: .automatic) {
-                        if roads.count == plan.path.count - 1 {
-                            ForEach(roads.indices, id: \.self) { i in
-                                MapPolyline(roads[i]).stroke(.blue, lineWidth: 5)
+                        // 已算出的路段画实线，还没算出来的画虚直线
+                        ForEach(0..<legCount, id: \.self) { i in
+                            if i < roads.count, let road = roads[i] {
+                                MapPolyline(road).stroke(.blue, lineWidth: 5)
+                            } else {
+                                MapPolyline(coordinates: [plan.path[i], plan.path[i + 1]])
+                                    .stroke(.blue.opacity(0.6), style: StrokeStyle(lineWidth: 3, dash: [6, 4]))
                             }
-                        } else {
-                            MapPolyline(coordinates: plan.path).stroke(.blue.opacity(0.7), style: StrokeStyle(lineWidth: 3, dash: [6, 4]))
                         }
                         if let start = plan.start {
                             Annotation("出发", coordinate: start) {
@@ -180,15 +239,50 @@ struct RouteResultView: View {
                 }
 
                 Section {
+                    LabeledContent("地点数", value: "\(plan.stops.count) 个")
                     LabeledContent("直线总距离", value: Format.distance(plan.straightMeters))
                     if loadingRoads {
-                        LabeledContent("道路距离") { ProgressView() }
-                    } else if roads.count == plan.path.count - 1 {
-                        LabeledContent("道路距离", value: Format.distance(roads.reduce(0) { $0 + $1.distance }))
-                        LabeledContent("预计用时", value: Format.duration(roads.reduce(0) { $0 + $1.expectedTravelTime }))
+                        LabeledContent("道路距离") {
+                            HStack(spacing: 6) {
+                                ProgressView()
+                                Text("\(roads.count)/\(legCount)").monospacedDigit().foregroundStyle(.secondary)
+                            }
+                        }
+                    } else if !loadedRoads.isEmpty {
+                        LabeledContent(allRoadsLoaded ? "道路总距离" : "道路距离（部分）",
+                                       value: Format.distance(loadedRoads.reduce(0) { $0 + $1.distance }))
+                        LabeledContent(allRoadsLoaded ? "预计总用时" : "预计用时（部分）",
+                                       value: Format.duration(loadedRoads.reduce(0) { $0 + $1.expectedTravelTime }))
                     }
                 } footer: {
-                    Text("访问顺序按直线距离优化；道路距离和用时由 Apple 地图估算，仅供参考。")
+                    Text(plan.stops.count > 12
+                         ? "地点较多，访问顺序按直线距离用近似算法优化（接近最优）；道路距离和用时由 Apple 地图估算，仅供参考。"
+                         : "访问顺序按直线距离计算出最优解；道路距离和用时由 Apple 地图估算，仅供参考。")
+                }
+
+                if plan.segments.count > 1 {
+                    Section {
+                        ForEach(plan.segments) { seg in
+                            HStack(spacing: 12) {
+                                Image(systemName: startedSegments.contains(seg.id) ? "checkmark.circle.fill" : "\(seg.id + 1).circle")
+                                    .font(.title2)
+                                    .foregroundStyle(startedSegments.contains(seg.id) ? Color.green : Color.accentColor)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("第 \(seg.id + 1) 段：第 \(seg.firstNumber)–\(seg.lastNumber) 站")
+                                        .font(.subheadline.weight(.semibold))
+                                    Text("\(plan.stopName(seg.firstNumber)) → \(plan.stopName(seg.lastNumber))")
+                                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                                }
+                                Spacer()
+                                Button("导航") { open(seg) }
+                                    .buttonStyle(.bordered)
+                            }
+                        }
+                    } header: {
+                        Text("分段导航（共 \(plan.segments.count) 段）")
+                    } footer: {
+                        Text("Google 地图一次最多导航 \(GoogleMaps.maxStopsPerRoute) 站，所以自动分成几段。跑完一段，回到这里点下一段，会从你当时的位置接着走。")
+                    }
                 }
 
                 Section("访问顺序") {
@@ -213,14 +307,12 @@ struct RouteResultView: View {
             }
             .safeAreaInset(edge: .bottom) {
                 Button {
-                    let stops = plan.stops.map(\.coordinate) + (plan.returnToStart ? [plan.start!] : [])
-                    let origin = plan.start == nil ? stops.first : nil
-                    let rest = plan.start == nil ? Array(stops.dropFirst()) : stops
-                    GoogleMaps.route(origin: origin, stops: rest, mode: travelMode)
+                    if let next = nextSegment { open(next) }
                 } label: {
-                    Label("用 Google 地图开始导航", systemImage: "arrow.triangle.turn.up.right.diamond.fill")
+                    Label(bottomButtonTitle, systemImage: "arrow.triangle.turn.up.right.diamond.fill")
                         .frame(maxWidth: .infinity)
                 }
+                .disabled(nextSegment == nil)
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
                 .padding()
@@ -235,12 +327,27 @@ struct RouteResultView: View {
         }
     }
 
+    /// 下一段要导航的（第一个还没点过的；都点过就是最后一段）
+    private var nextSegment: RoutePlan.Segment? {
+        plan.segments.first { !startedSegments.contains($0.id) } ?? plan.segments.last
+    }
+
+    private var bottomButtonTitle: String {
+        guard plan.segments.count > 1, let next = nextSegment else { return "用 Google 地图开始导航" }
+        return "导航第 \(next.id + 1) 段（共 \(plan.segments.count) 段）"
+    }
+
+    private func open(_ seg: RoutePlan.Segment) {
+        startedSegments.insert(seg.id)
+        GoogleMaps.route(origin: seg.origin, stops: seg.stops, mode: travelMode)
+    }
+
     /// 第 i 站与上一站之间的距离
     private func legText(_ i: Int) -> String? {
         let legIndex = plan.start == nil ? i - 1 : i
         guard legIndex >= 0 else { return nil }
-        if roads.count == plan.path.count - 1 {
-            return Format.distance(roads[legIndex].distance)
+        if legIndex < roads.count, let road = roads[legIndex] {
+            return Format.distance(road.distance)
         }
         let a = plan.path[legIndex], b = plan.path[legIndex + 1]
         return Format.distance(CLLocation(latitude: a.latitude, longitude: a.longitude)
@@ -252,15 +359,20 @@ struct RouteResultView: View {
         defer { loadingRoads = false }
         let type = travelMode.mkTransportType
         let path = plan.path
-        var result: [MKRoute] = []
+        roads = []
         for i in 0..<(path.count - 1) {
+            if Task.isCancelled { return }
             let req = MKDirections.Request()
             req.source = MKMapItem(placemark: MKPlacemark(coordinate: path[i]))
             req.destination = MKMapItem(placemark: MKPlacemark(coordinate: path[i + 1]))
             req.transportType = type
-            guard let route = try? await MKDirections(request: req).calculate().routes.first else { return }
-            result.append(route)
+            var route = try? await MKDirections(request: req).calculate().routes.first
+            if route == nil {
+                // 可能是请求太快被限流，稍等再试一次
+                try? await Task.sleep(for: .seconds(2))
+                route = try? await MKDirections(request: req).calculate().routes.first
+            }
+            roads.append(route)
         }
-        roads = result
     }
 }

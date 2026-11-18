@@ -3,6 +3,9 @@ import CoreLocation
 
 /// 把导航交给 Google 地图。装了 App 就用 App，没装就用网页版。
 enum GoogleMaps {
+    /// Google 地图一个导航链接最多支持的目的地数（9 个途经点 + 1 个终点）
+    static let maxStopsPerRoute = 10
+
     static var isAppInstalled: Bool {
         guard let url = URL(string: "comgooglemaps://") else { return false }
         return UIApplication.shared.canOpenURL(url)
