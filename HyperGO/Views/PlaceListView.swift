@@ -157,6 +157,7 @@ struct PlaceListView: View {
 
 /// 主屏幕风格的图标：彩色圆形图标 + 名称 + 距离
 struct PlaceTile: View {
+    @AppStorage("textSize") private var textSize: TextSize = .system
     let place: Place
     /// 最短实际道路距离（还没算好时为 nil）
     let routeDistance: Double?
@@ -188,6 +189,7 @@ struct PlaceTile: View {
         }
         .frame(maxWidth: .infinity)
         .contentShape(Rectangle())
+        .appTextSize(textSize)   // 设置里的字体大小只作用于图标文字
     }
 }
 
@@ -207,7 +209,7 @@ struct SettingsView: View {
                 } header: {
                     Text("字体大小")
                 } footer: {
-                    Text("调整整个 App 的文字大小。「跟随系统」使用 iPhone 设置 → 显示与亮度 → 文字大小。")
+                    Text("只调整首页图标下面的名称、距离，以及地图上地点的名称。「跟随系统」使用 iPhone 设置 → 显示与亮度 → 文字大小。")
                 }
                 Section("Google 地图") {
                     LabeledContent("App 状态", value: GoogleMaps.isAppInstalled ? "已安装" : "未安装（将使用网页版）")

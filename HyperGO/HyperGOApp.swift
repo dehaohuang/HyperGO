@@ -17,20 +17,16 @@ struct HyperGOApp: App {
 struct ContentView: View {
     @Environment(LocationManager.self) private var locationManager
     @Environment(\.modelContext) private var context
-    @AppStorage("textSize") private var textSize: TextSize = .system
     @Environment(\.scenePhase) private var scenePhase
     @State private var importMessage: String?
 
     var body: some View {
         TabView {
             PlaceListView()
-                .appTextSize(textSize)
                 .tabItem { Label("地点", systemImage: "star.square.on.square") }
             PlacesMapView()
-                .appTextSize(textSize)
                 .tabItem { Label("地图", systemImage: "map") }
             RoutePlannerView()
-                .appTextSize(textSize)
                 .tabItem { Label("路线", systemImage: "point.topleft.down.to.point.bottomright.curvepath") }
         }
         .onChange(of: scenePhase, initial: true) { _, phase in
