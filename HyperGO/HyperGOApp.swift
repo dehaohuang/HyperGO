@@ -10,7 +10,7 @@ struct HyperGOApp: App {
             ContentView()
                 .environment(locationManager)
         }
-        .modelContainer(for: [Place.self, PlaceGroup.self])
+        .modelContainer(AppData.container)
     }
 }
 
@@ -19,18 +19,25 @@ struct ContentView: View {
     @Environment(\.modelContext) private var context
     @Environment(\.scenePhase) private var scenePhase
     @State private var importMessage: String?
+    @Bindable private var router = IntentRouter.shared
 
     var body: some View {
-        TabView {
+        TabView(selection: $router.tab) {
             PlaceListView()
                 .tabItem { Label("地点", systemImage: "star.square.on.square") }
+                .tag(0)
             PlacesMapView()
                 .tabItem { Label("地图", systemImage: "map") }
+                .tag(1)
             RoutePlannerView()
                 .tabItem { Label("路线", systemImage: "point.topleft.down.to.point.bottomright.curvepath") }
+                .tag(2)
         }
         .onChange(of: scenePhase, initial: true) { _, phase in
+            // 地点、分组有变化时，让 Siri 认识新的名称
+            if phase == .background { HyperGOShortcuts.updateAppShortcutParameters() }
             guard phase == .active else { return }
+            HyperGOShortcuts.updateAppShortcutParameters()
             Task {
                 if let r = await PlaceImporter.importDropFileIfPresent(into: context, near: locationManager.location) {
                     importMessage = r.summary

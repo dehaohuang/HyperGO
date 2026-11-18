@@ -99,6 +99,12 @@ struct RoutePlannerView: View {
             }
             .navigationTitle("路线规划")
             .sheet(item: $plan) { RouteResultView(plan: $0) }
+            // Siri：「用 HyperGO 规划某某路线」
+            .onChange(of: IntentRouter.shared.routeRequest, initial: true) { _, request in
+                guard let request else { return }
+                IntentRouter.shared.routeRequest = nil
+                Task { await planFromSiri(request.groupName) }
+            }
         }
     }
 
@@ -119,6 +125,19 @@ struct RoutePlannerView: View {
         } else {
             selection.insert(place.id)
         }
+    }
+
+    /// Siri 指令：只看这个分组，选中组内全部地点，从当前位置出发算路线
+    private func planFromSiri(_ group: String) async {
+        plan = nil
+        groupFilterRaw = group.isEmpty ? "" : PlaceGroups.encode([group])
+        selection = Set(visible.map(\.id))
+        fromCurrentLocation = true
+        // 刚打开 App 时可能还没拿到定位，最多等 5 秒
+        for _ in 0..<25 where locationManager.location == nil {
+            try? await Task.sleep(for: .milliseconds(200))
+        }
+        if canCompute { await compute() }
     }
 
     /// 在后台计算，地点很多时界面也不会卡

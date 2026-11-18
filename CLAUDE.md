@@ -10,6 +10,7 @@ iOS 上的「快捷导航」App（只支持驾车）：
 1. **地点**（首页）：分组显示成文件夹大图标，和未分组地点混排、都能拖动换位置（可自定义名称、图案、颜色，默认显示组内 4 个地点预览）；一排 4 个图标，图标下显示最短道路距离；点地点用 Google 地图导航；长按后拖动排序（图标跟手、其他图标动画让位、松手立即归位）、拖到文件夹上归组、长按不动松手弹出菜单、多选批量操作、批量导入。
 2. **地图**：MapKit 显示地点（名称自绘、按屏幕避让），可隐藏地图兴趣点文字；分组筛选可多选，和路线页互相独立。
 3. **路线**：分组多选筛选，不限数量选地点，算最短访问顺序（≤12 点 Held-Karp 精确解，更多点多起点最近邻 + 2-opt + Or-opt），按导航 App 的站数上限自动分段（Apple 地图/Waze 逐站）导航。
+- Siri / 快捷指令（App Intents，免费账号可用，`Services/SiriIntents.swift`）：「用 HyperGO 导航到某地点」「用 HyperGO 规划某分组路线」；地点、分组名称在 App 回到前台/进后台时同步给 Siri。
 - 设置：字体大小（只影响首页图标文字和地图地点名称）；导航 App（Google 地图 / Apple 地图 / Waze，只列已安装的，Google 没装用网页版）。
 - 数据：SwiftData，`Place`（groupName 关联分组名）+ `PlaceGroup`（name/icon/colorHex/sortIndex）。
 - 导航交给设置里选的地图 App（`Services/Navigator.swift`）：Google 地图支持一次 10 站，Apple 地图 / Waze 只能一个目的地，路线页改为逐站导航。
@@ -26,4 +27,4 @@ iOS 上的「快捷导航」App（只支持驾车）：
 - 2026-11-17：已装到用户的 iPhone 11 Pro Max（Redbird's iPhone，UDID 00008030-001648DA0151802E），已配对、开发者模式已开、证书已信任，App 能正常打开。Bundle ID `com.dehaohuang.hypergo`，Personal Team `AG35R2KFF7`（已写入 project.yml）。
 - 重新安装（7 天到期后）：同一 Wi‑Fi 下手机解锁，`xcodebuild -project HyperGO.xcodeproj -scheme HyperGO -destination 'generic/platform=iOS' -derivedDataPath build -allowProvisioningUpdates build` → `xcrun devicectl device install app --device 00008030-001648DA0151802E build/Build/Products/Debug-iphoneos/HyperGO.app`。新版 Xcode 没有「Connect via network」勾选框，配对后自动无线。
 - （已完成）装到真机的步骤：Xcode 登录 Apple ID、Team 选 Personal Team、Bundle ID 改为唯一值（如 `com.dehaohuang.hypergo`）、iPhone 开启开发者模式并信任证书。
-- 以后可能加的功能：桌面小组件、Siri 快捷指令、地点分组。
+- 以后可能加的功能：桌面小组件。
