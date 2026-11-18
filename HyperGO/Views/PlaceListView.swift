@@ -18,7 +18,7 @@ struct PlaceListView: View {
     @State private var groupingTargets: [Place] = []
     @State private var newGroupText = ""
 
-    /// 拖动状态：原位置显示虚线占位圈，其他图标实时让位
+    /// 拖动状态：原位置留空，其他图标实时让位
     @State private var drag = DragState()
 
     /// 多选模式
@@ -273,8 +273,8 @@ struct PlaceListView: View {
     }
 }
 
-/// 拖动状态。SwiftUI 没有「拖动结束」回调，所以占位圈按拖动活动显示：
-/// 有拖放事件时显示，松手或 2.5 秒没有拖动事件就自动隐藏，避免卡住
+/// 拖动状态。SwiftUI 没有「拖动结束」回调，所以原位置的空位按拖动活动显示：
+/// 有拖放事件时留空，松手或 2.5 秒没有拖动事件就恢复显示，避免图标消失卡住
 @MainActor
 @Observable
 final class DragState {
@@ -390,22 +390,12 @@ struct PlaceTile: View {
     let routeDistance: Double?
     /// 直线距离，道路距离算好前先用「≈」显示
     let straightDistance: Double?
-    /// 正在被拖走：显示虚线占位圈
+    /// 正在被拖走：原位置留空（其他图标照常让位）
     var placeholder: Bool = false
 
     var body: some View {
         VStack(spacing: 6) {
-            ZStack {
-                PlaceIconView(icon: place.icon, colorHex: place.colorHex, size: 60)
-                    .opacity(placeholder ? 0 : 1)
-                if placeholder {
-                    Circle()
-                        .strokeBorder(Color.secondary.opacity(0.6), style: StrokeStyle(lineWidth: 2, dash: [5, 4]))
-                        .background(Circle().fill(Color(.secondarySystemFill)))
-                        .frame(width: 60, height: 60)
-                        .transition(.scale(scale: 0.8).combined(with: .opacity))
-                }
-            }
+            PlaceIconView(icon: place.icon, colorHex: place.colorHex, size: 60)
             Text(place.name)
                 .font(.caption)
                 .fontWeight(.medium)
@@ -426,6 +416,7 @@ struct PlaceTile: View {
                     .lineLimit(1)
             }
         }
+        .opacity(placeholder ? 0 : 1)
         .frame(maxWidth: .infinity)
         .contentShape(Rectangle())
         .appTextSize(textSize)   // 设置里的字体大小只作用于图标文字
