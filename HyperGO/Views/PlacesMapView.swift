@@ -6,6 +6,7 @@ struct PlacesMapView: View {
     @Environment(LocationManager.self) private var locationManager
     @Query(sort: \Place.sortIndex) private var places: [Place]
     @AppStorage("travelMode") private var travelMode: TravelMode = .driving
+    @AppStorage("navApp") private var navApp = NavApp.google.rawValue
 
     @State private var camera: MapCameraPosition = .automatic
     @State private var selected: Place?
@@ -189,9 +190,9 @@ struct PlacesMapView: View {
             .foregroundStyle(.secondary)
 
             Button {
-                GoogleMaps.navigate(to: place.coordinate, mode: travelMode)
+                Navigator.navigate(to: place.coordinate)
             } label: {
-                Label("用 Google 地图导航", systemImage: "arrow.triangle.turn.up.right.diamond.fill")
+                Label("用\(NavApp(rawValue: navApp)?.displayName ?? "地图") 导航", systemImage: "arrow.triangle.turn.up.right.diamond.fill")
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)

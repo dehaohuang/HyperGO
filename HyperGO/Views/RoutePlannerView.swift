@@ -84,7 +84,7 @@ struct RoutePlannerView: View {
                         HStack(spacing: 8) { ProgressView(); Text("正在计算最短顺序…") }
                             .frame(maxWidth: .infinity)
                     } else {
-                        Label(selection.count > GoogleMaps.maxStopsPerRoute
+                        Label(selection.count > NavApp.current.maxStopsPerRoute && NavApp.current.maxStopsPerRoute > 1
                               ? "计算最短路线（\(selection.count) 个地点，自动分段）"
                               : "计算最短路线",
                               systemImage: "point.topleft.down.to.point.bottomright.curvepath.fill")
@@ -144,7 +144,7 @@ struct RoutePlan: Identifiable {
     let returnToStart: Bool
     let straightMeters: Double
 
-    /// 一段 Google 地图导航：origin 为 nil 表示从当前位置出发
+    /// 一段导航：origin 为 nil 表示从当前位置出发
     struct Segment: Identifiable {
         let id: Int
         let origin: CLLocationCoordinate2D?
@@ -154,8 +154,8 @@ struct RoutePlan: Identifiable {
         let lastNumber: Int
     }
 
-    /// 按 Google 地图的上限切成几段；第 2 段起从当时所在位置（上一段终点）出发
-    var segments: [Segment] {
+    /// 按导航 App 一次能去的站数切成几段；第 2 段起从当时所在位置（上一段终点）出发
+    func segments(maxStops: Int) -> [Segment] {
         var destinations = stops.map(\.coordinate)
         var origin: CLLocationCoordinate2D? = nil
         var number = 1
@@ -168,7 +168,7 @@ struct RoutePlan: Identifiable {
         var result: [Segment] = []
         var i = 0
         while i < destinations.count {
-            let chunk = Array(destinations[i..<min(i + GoogleMaps.maxStopsPerRoute, destinations.count)])
+            let chunk = Array(destinations[i..<min(i + max(1, maxStops), destinations.count)])
             result.append(Segment(id: result.count, origin: result.isEmpty ? origin : nil, stops: chunk,
                                   firstNumber: number, lastNumber: number + chunk.count - 1))
             number += chunk.count
@@ -196,7 +196,13 @@ struct RoutePlan: Identifiable {
 struct RouteResultView: View {
     @Environment(\.dismiss) private var dismiss
     @AppStorage("travelMode") private var travelMode: TravelMode = .driving
+    @AppStorage("navApp") private var navAppRaw = NavApp.google.rawValue
     let plan: RoutePlan
+
+    private var navApp: NavApp { _ = navAppRaw; return NavApp.current }
+    private var segments: [RoutePlan.Segment] { plan.segments(maxStops: navApp.maxStopsPerRoute) }
+    /// 一站一站导航（Apple 地图、Waze）
+    private var singleStop: Bool { navApp.maxStopsPerRoute == 1 }
 
     /// 每一段路（相邻两站之间）的道路路线；算不出来的为 nil
     @State private var roads: [MKRoute?] = []
@@ -265,18 +271,23 @@ struct RouteResultView: View {
                          : "访问顺序按直线距离计算出最优解；道路距离和用时由 Apple 地图估算，仅供参考。")
                 }
 
-                if plan.segments.count > 1 {
+                if segments.count > 1 {
                     Section {
-                        ForEach(plan.segments) { seg in
+                        ForEach(segments) { seg in
                             HStack(spacing: 12) {
                                 Image(systemName: startedSegments.contains(seg.id) ? "checkmark.circle.fill" : "\(seg.id + 1).circle")
                                     .font(.title2)
                                     .foregroundStyle(startedSegments.contains(seg.id) ? Color.green : Color.accentColor)
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text("第 \(seg.id + 1) 段：第 \(seg.firstNumber)–\(seg.lastNumber) 站")
-                                        .font(.subheadline.weight(.semibold))
-                                    Text("\(plan.stopName(seg.firstNumber)) → \(plan.stopName(seg.lastNumber))")
-                                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                                    if singleStop {
+                                        Text("第 \(seg.firstNumber) 站：\(plan.stopName(seg.firstNumber))")
+                                            .font(.subheadline.weight(.semibold)).lineLimit(1)
+                                    } else {
+                                        Text("第 \(seg.id + 1) 段：第 \(seg.firstNumber)–\(seg.lastNumber) 站")
+                                            .font(.subheadline.weight(.semibold))
+                                        Text("\(plan.stopName(seg.firstNumber)) → \(plan.stopName(seg.lastNumber))")
+                                            .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                                    }
                                 }
                                 Spacer()
                                 Button("导航") { open(seg) }
@@ -284,9 +295,11 @@ struct RouteResultView: View {
                             }
                         }
                     } header: {
-                        Text("分段导航（共 \(plan.segments.count) 段）")
+                        Text(singleStop ? "逐站导航（共 \(segments.count) 站）" : "分段导航（共 \(segments.count) 段）")
                     } footer: {
-                        Text("Google 地图一次最多导航 \(GoogleMaps.maxStopsPerRoute) 站，所以自动分成几段。跑完一段，回到这里点下一段，会从你当时的位置接着走。")
+                        Text(singleStop
+                             ? "\(navApp.title)一次只能导航到一个地点。到达一站后回到这里，点下一站继续。"
+                             : "\(navApp.title)一次最多导航 \(navApp.maxStopsPerRoute) 站，所以自动分成几段。跑完一段，回到这里点下一段，会从你当时的位置接着走。")
                     }
                 }
 
@@ -334,17 +347,18 @@ struct RouteResultView: View {
 
     /// 下一段要导航的（第一个还没点过的；都点过就是最后一段）
     private var nextSegment: RoutePlan.Segment? {
-        plan.segments.first { !startedSegments.contains($0.id) } ?? plan.segments.last
+        segments.first { !startedSegments.contains($0.id) } ?? segments.last
     }
 
     private var bottomButtonTitle: String {
-        guard plan.segments.count > 1, let next = nextSegment else { return "用 Google 地图开始导航" }
-        return "导航第 \(next.id + 1) 段（共 \(plan.segments.count) 段）"
+        guard segments.count > 1, let next = nextSegment else { return "用\(navApp.displayName)开始导航" }
+        if singleStop { return "导航到第 \(next.firstNumber) 站：\(plan.stopName(next.firstNumber))" }
+        return "导航第 \(next.id + 1) 段（共 \(segments.count) 段）"
     }
 
     private func open(_ seg: RoutePlan.Segment) {
         startedSegments.insert(seg.id)
-        GoogleMaps.route(origin: seg.origin, stops: seg.stops, mode: travelMode)
+        Navigator.route(origin: seg.origin, stops: seg.stops, app: navApp)
     }
 
     /// 第 i 站与上一站之间的距离

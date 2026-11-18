@@ -26,6 +26,8 @@ targets:
         NSLocationWhenInUseUsageDescription: 用于在地图上显示你的位置，并计算到各个地点的距离和最短路线。
         LSApplicationQueriesSchemes:
           - comgooglemaps
+          - maps
+          - waze
     settings:
       base:
         # 免费 Apple ID 要求 Bundle ID 全球唯一，请改成你自己的，例如 com.你的名字.hypergo

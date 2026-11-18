@@ -204,7 +204,7 @@ struct PlaceBoard: View {
             ContentUnavailableView {
                 Label("还没有地点", systemImage: "mappin.slash")
             } description: {
-                Text("点右上角 + 添加你常去的地方，之后点一下就能用 Google 地图导航。")
+                Text("点右上角 + 添加你常去的地方，之后点一下就能导航。")
             } actions: {
                 Button("添加地点") { showingNew = true }
                     .buttonStyle(.borderedProminent)
@@ -273,7 +273,7 @@ struct PlaceBoard: View {
                 if selecting {
                     if isSelected { selectedIDs.remove(place.id) } else { selectedIDs.insert(place.id) }
                 } else {
-                    GoogleMaps.navigate(to: place.coordinate, mode: travelMode)
+                    Navigator.navigate(to: place.coordinate)
                 }
             }
         pressInteraction(base, id: place.id)
@@ -689,6 +689,7 @@ struct PlaceTile: View {
 
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
+    @AppStorage("navApp") private var navApp = NavApp.google.rawValue
     @AppStorage("textSize") private var textSize: TextSize = .system
 
     var body: some View {
@@ -705,8 +706,18 @@ struct SettingsView: View {
                 } footer: {
                     Text("只调整首页图标下面的名称、距离，以及地图上地点的名称。「跟随系统」使用 iPhone 设置 → 显示与亮度 → 文字大小。")
                 }
-                Section("Google 地图") {
-                    LabeledContent("App 状态", value: GoogleMaps.isAppInstalled ? "已安装" : "未安装（将使用网页版）")
+                Section {
+                    Picker("导航 App", selection: $navApp) {
+                        ForEach(NavApp.choices) { app in
+                            Text(app.displayName).tag(app.rawValue)
+                        }
+                    }
+                } header: {
+                    Text("导航")
+                } footer: {
+                    Text(NavApp.current.maxStopsPerRoute > 1
+                         ? "只列出手机上已安装的地图 App。路线规划时 Google 地图一次最多导航 \(NavApp.google.maxStopsPerRoute) 站，超过会自动分段。"
+                         : "只列出手机上已安装的地图 App。\(NavApp.current.title)一次只能导航到一个地点，路线规划时会一站一站地导航。")
                 }
             }
             .navigationTitle("设置")
