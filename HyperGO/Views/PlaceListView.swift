@@ -10,6 +10,7 @@ struct PlaceListView: View {
     @State private var editingPlace: Place?
     @State private var showingNew = false
     @State private var showingSettings = false
+    @State private var showingImport = false
     @State private var routeDistances = RouteDistanceStore()
 
     /// 一排最多 4 个图标
@@ -70,12 +71,20 @@ struct PlaceListView: View {
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button { showingNew = true } label: { Image(systemName: "plus") }
+                    Menu {
+                        Button { showingNew = true } label: { Label("添加地点", systemImage: "mappin.and.ellipse") }
+                        Button { showingImport = true } label: { Label("批量导入", systemImage: "square.and.arrow.down.on.square") }
+                    } label: {
+                        Image(systemName: "plus")
+                    } primaryAction: {
+                        showingNew = true
+                    }
                 }
             }
             .sheet(isPresented: $showingNew) { PlaceEditorView(place: nil) }
             .sheet(item: $editingPlace) { PlaceEditorView(place: $0) }
             .sheet(isPresented: $showingSettings) { SettingsView() }
+            .sheet(isPresented: $showingImport) { ImportPlacesView() }
         }
     }
 
