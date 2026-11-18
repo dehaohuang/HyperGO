@@ -116,6 +116,7 @@ struct PlaceTile: View {
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @AppStorage("travelMode") private var travelMode: TravelMode = .driving
+    @AppStorage("textSize") private var textSize: TextSize = .system
 
     var body: some View {
         NavigationStack {
@@ -132,6 +133,17 @@ struct SettingsView: View {
                     Text("出行方式")
                 } footer: {
                     Text("打开 Google 地图时使用的默认出行方式。")
+                }
+                Section {
+                    Picker("字体大小", selection: $textSize) {
+                        ForEach(TextSize.allCases) { size in
+                            Text(size.title).tag(size)
+                        }
+                    }
+                } header: {
+                    Text("字体大小")
+                } footer: {
+                    Text("调整整个 App 的文字大小。「跟随系统」使用 iPhone 设置 → 显示与亮度 → 文字大小。")
                 }
                 Section("Google 地图") {
                     LabeledContent("App 状态", value: GoogleMaps.isAppInstalled ? "已安装" : "未安装（将使用网页版）")
