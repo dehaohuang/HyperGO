@@ -119,7 +119,7 @@ struct FolderIconView: View {
                             ForEach(0..<2, id: \.self) { col in
                                 let i = row * 2 + col
                                 if i < members.count {
-                                    PlaceIconView(icon: members[i].icon, colorHex: members[i].colorHex, size: mini)
+                                    PlaceIconView(icon: members[i].icon, colorHex: members[i].colorHex, photo: members[i].photoData, size: mini)
                                 } else {
                                     Circle().fill(.white.opacity(0.25)).frame(width: mini, height: mini)
                                 }
@@ -416,7 +416,7 @@ struct GroupMembersView: View {
                             Image(systemName: place.groupName == group.name ? "checkmark.circle.fill" : "circle")
                                 .font(.title3)
                                 .foregroundStyle(place.groupName == group.name ? Color.accentColor : Color.secondary)
-                            PlaceIconView(icon: place.icon, colorHex: place.colorHex, size: 32)
+                            PlaceIconView(icon: place.icon, colorHex: place.colorHex, photo: place.photoData, size: 32)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(place.name)
                                 if !place.groupName.isEmpty && place.groupName != group.name {

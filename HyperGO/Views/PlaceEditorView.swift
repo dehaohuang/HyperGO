@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import MapKit
+import PhotosUI
 
 struct PlaceEditorView: View {
     @Environment(\.dismiss) private var dismiss
@@ -23,6 +24,8 @@ struct PlaceEditorView: View {
     @State private var showingPicker = false
     @State private var loaded = false
     @State private var groupName = ""
+    @State private var photoData: Data?
+    @State private var photoItem: PhotosPickerItem?
     @Query(sort: \PlaceGroup.sortIndex) private var allGroups: [PlaceGroup]
 
     private var canSave: Bool {
@@ -34,7 +37,7 @@ struct PlaceEditorView: View {
             Form {
                 Section {
                     HStack(spacing: 16) {
-                        PlaceIconView(icon: icon, colorHex: colorHex, size: 56)
+                        PlaceIconView(icon: icon, colorHex: colorHex, photo: photoData, size: 56)
                         TextField("名称，例如：家、公司", text: $name)
                             .font(.title3)
                     }
@@ -45,7 +48,7 @@ struct PlaceEditorView: View {
                     if let coordinate {
                         Map(initialPosition: .region(MKCoordinateRegion(center: coordinate, latitudinalMeters: 800, longitudinalMeters: 800))) {
                             Annotation("", coordinate: coordinate) {
-                                PlaceIconView(icon: icon, colorHex: colorHex, size: 30)
+                                PlaceIconView(icon: icon, colorHex: colorHex, photo: photoData, size: 30)
                             }
                         }
                         .id("\(coordinate.latitude),\(coordinate.longitude)")
@@ -84,11 +87,18 @@ struct PlaceEditorView: View {
                     Text("输入新的分组名称，或点下面已有的分组。留空就是不分组。")
                 }
 
-                Section("图标") {
+                Section {
+                    PhotosPicker(selection: $photoItem, matching: .images) {
+                        Label(photoData == nil ? "从相册选照片" : "换一张照片", systemImage: "photo.on.rectangle")
+                    }
+                    if photoData != nil {
+                        Button("不用照片", role: .destructive) { photoData = nil }
+                    }
                     LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 6), spacing: 12) {
                         ForEach(Presets.symbols, id: \.self) { symbol in
                             Button {
                                 icon = symbol
+                                photoData = nil
                             } label: {
                                 Image(systemName: symbol)
                                     .font(.system(size: 18))
@@ -104,9 +114,14 @@ struct PlaceEditorView: View {
                         .onChange(of: emojiInput) { _, newValue in
                             if let last = newValue.last {
                                 icon = String(last)
+                                photoData = nil
                                 if newValue.count > 1 { emojiInput = String(last) }
                             }
                         }
+                } header: {
+                    Text("图标")
+                } footer: {
+                    Text("选了照片就显示照片；再点下面的图案或输入 emoji 就换回图案。")
                 }
 
                 Section("颜色") {
@@ -150,6 +165,16 @@ struct PlaceEditorView: View {
             .onChange(of: suggestedName) { _, newValue in
                 if name.isEmpty { name = newValue }
             }
+            .onChange(of: photoItem) { _, item in
+                guard let item else { return }
+                Task {
+                    if let raw = try? await item.loadTransferable(type: Data.self),
+                       let prepared = PlacePhoto.prepare(raw) {
+                        photoData = prepared
+                    }
+                    photoItem = nil
+                }
+            }
             .onAppear(perform: load)
         }
     }
@@ -164,6 +189,7 @@ struct PlaceEditorView: View {
             coordinate = place.coordinate
             address = place.address
             groupName = place.groupName
+            photoData = place.photoData
         } else {
             groupName = initialGroup
             if let initialCoordinate { coordinate = initialCoordinate }
@@ -181,6 +207,7 @@ struct PlaceEditorView: View {
             place.latitude = coordinate.latitude
             place.longitude = coordinate.longitude
             place.address = address
+            place.photoData = photoData
             let newGroup = groupName.trimmingCharacters(in: .whitespaces)
             if place.groupName != newGroup {
                 place.groupName = newGroup
@@ -188,10 +215,12 @@ struct PlaceEditorView: View {
             }
         } else {
             let count = GroupStore.nextSortIndex(in: context)
-            context.insert(Place(name: trimmed, icon: icon, colorHex: colorHex,
-                                 latitude: coordinate.latitude, longitude: coordinate.longitude,
-                                 address: address, sortIndex: count,
-                                 groupName: groupName.trimmingCharacters(in: .whitespaces)))
+            let created = Place(name: trimmed, icon: icon, colorHex: colorHex,
+                                latitude: coordinate.latitude, longitude: coordinate.longitude,
+                                address: address, sortIndex: count,
+                                groupName: groupName.trimmingCharacters(in: .whitespaces))
+            created.photoData = photoData
+            context.insert(created)
         }
         dismiss()
     }

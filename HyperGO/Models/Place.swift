@@ -15,6 +15,8 @@ final class Place {
     var createdAt: Date
     /// 所属分组名称；空字符串表示未分组（带默认值，旧数据可自动迁移）
     var groupName: String = ""
+    /// 从相册选的照片（已裁成正方形缩小）；有照片时图标显示照片
+    var photoData: Data? = nil
 
     init(name: String,
          icon: String = "mappin",

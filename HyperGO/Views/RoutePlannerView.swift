@@ -49,7 +49,7 @@ struct RoutePlannerView: View {
                                 Image(systemName: selection.contains(place.id) ? "checkmark.circle.fill" : "circle")
                                     .font(.title3)
                                     .foregroundStyle(selection.contains(place.id) ? Color.accentColor : Color.secondary)
-                                PlaceIconView(icon: place.icon, colorHex: place.colorHex, size: 32)
+                                PlaceIconView(icon: place.icon, colorHex: place.colorHex, photo: place.photoData, size: 32)
                                 Text(place.name)
                                 Spacer()
                                 if let d = locationManager.distance(to: place.coordinate) {
@@ -329,7 +329,7 @@ struct RouteResultView: View {
                     ForEach(Array(plan.stops.enumerated()), id: \.offset) { i, place in
                         HStack(spacing: 12) {
                             Text("\(i + 1)").font(.headline).monospacedDigit().frame(width: 24)
-                            PlaceIconView(icon: place.icon, colorHex: place.colorHex, size: 30)
+                            PlaceIconView(icon: place.icon, colorHex: place.colorHex, photo: place.photoData, size: 30)
                             Text(place.name)
                             Spacer()
                             if let leg = legText(i) {

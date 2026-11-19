@@ -657,7 +657,7 @@ struct PlaceTile: View {
 
     var body: some View {
         VStack(spacing: 6) {
-            PlaceIconView(icon: place.icon, colorHex: place.colorHex, size: 60)
+            PlaceIconView(icon: place.icon, colorHex: place.colorHex, photo: place.photoData, size: 60)
             Text(place.name)
                 .font(.caption)
                 .fontWeight(.medium)

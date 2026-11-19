@@ -32,9 +32,6 @@ struct ContentView: View {
             RoutePlannerView()
                 .tabItem { Label("路线", systemImage: "point.topleft.down.to.point.bottomright.curvepath") }
                 .tag(2)
-            GasStationsView()
-                .tabItem { Label("加油", systemImage: "fuelpump") }
-                .tag(3)
         }
         .onChange(of: scenePhase, initial: true) { _, phase in
             // 地点、分组有变化时，让 Siri 认识新的名称

@@ -23,7 +23,7 @@ final class IntentRouter {
         let groupName: String
     }
 
-    /// 当前标签页：0 地点、1 地图、2 路线、3 加油
+    /// 当前标签页：0 地点、1 地图、2 路线
     var tab = 0
     var routeRequest: RouteRequest?
 

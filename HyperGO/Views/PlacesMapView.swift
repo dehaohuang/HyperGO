@@ -40,7 +40,7 @@ struct PlacesMapView: View {
                 ForEach(visible) { place in
                     // 名称自己画在图标下方，这样才能跟随设置里的字体大小
                     Annotation("", coordinate: place.coordinate) {
-                        PlaceIconView(icon: place.icon, colorHex: place.colorHex,
+                        PlaceIconView(icon: place.icon, colorHex: place.colorHex, photo: place.photoData,
                                       size: selected?.id == place.id ? 42 : 32)
                             .overlay(Circle().stroke(.white, lineWidth: 2))
                             .shadow(radius: 2)
@@ -165,7 +165,7 @@ struct PlacesMapView: View {
     private func card(for place: Place) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 12) {
-                PlaceIconView(icon: place.icon, colorHex: place.colorHex, size: 44)
+                PlaceIconView(icon: place.icon, colorHex: place.colorHex, photo: place.photoData, size: 44)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(place.name).font(.headline)
                     if !place.address.isEmpty {

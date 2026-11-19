@@ -13,24 +13,63 @@ extension Color {
     }
 }
 
-/// 圆形彩色底 + SF Symbol 或 emoji
+/// 圆形彩色底 + SF Symbol 或 emoji；有照片时显示照片
 struct PlaceIconView: View {
     let icon: String
     let colorHex: String
+    var photo: Data? = nil
     var size: CGFloat = 44
 
     var body: some View {
         ZStack {
-            Circle().fill(Color(hex: colorHex))
-            if UIImage(systemName: icon) != nil {
-                Image(systemName: icon)
-                    .font(.system(size: size * 0.45, weight: .semibold))
-                    .foregroundStyle(.white)
+            if let image = PlacePhoto.image(photo) {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+                    .clipShape(Circle())
             } else {
-                Text(icon).font(.system(size: size * 0.55))
+                Circle().fill(Color(hex: colorHex))
+                if UIImage(systemName: icon) != nil {
+                    Image(systemName: icon)
+                        .font(.system(size: size * 0.45, weight: .semibold))
+                        .foregroundStyle(.white)
+                } else {
+                    Text(icon).font(.system(size: size * 0.55))
+                }
             }
         }
         .frame(width: size, height: size)
+    }
+}
+
+/// 地点照片：存之前裁成正方形、缩小，显示时缓存解码结果
+enum PlacePhoto {
+    private static let cache = NSCache<NSData, UIImage>()
+
+    static func image(_ data: Data?) -> UIImage? {
+        guard let data, !data.isEmpty else { return nil }
+        let key = data as NSData
+        if let hit = cache.object(forKey: key) { return hit }
+        guard let image = UIImage(data: data) else { return nil }
+        cache.setObject(image, forKey: key)
+        return image
+    }
+
+    /// 取中间正方形，缩到 300×300，存成 JPEG（每张约 20KB）
+    static func prepare(_ data: Data) -> Data? {
+        guard let image = UIImage(data: data) else { return nil }
+        let side = min(image.size.width, image.size.height)
+        guard side > 0 else { return nil }
+        let target: CGFloat = 300
+        let scale = target / side
+        let drawSize = CGSize(width: image.size.width * scale, height: image.size.height * scale)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let out = UIGraphicsImageRenderer(size: CGSize(width: target, height: target), format: format).image { _ in
+            image.draw(in: CGRect(x: (target - drawSize.width) / 2, y: (target - drawSize.height) / 2,
+                                  width: drawSize.width, height: drawSize.height))
+        }
+        return out.jpegData(compressionQuality: 0.8)
     }
 }
 
