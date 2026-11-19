@@ -6,7 +6,7 @@ struct GasStationsView: View {
     @Environment(LocationManager.self) private var locationManager
     @AppStorage("navApp") private var navApp = NavApp.google.rawValue
     @AppStorage("fuel.type") private var fuelType: FuelType = .regular
-    @AppStorage("fuel.radiusKm") private var radiusKm = 5.0
+    @AppStorage("fuel.radiusKm") private var radiusKm = 10.0
     @AppStorage("fuel.fillLitres") private var fillLitres = 40.0
     @AppStorage("fuel.consumption") private var consumption = 10.0
     @AppStorage(GasStationService.keyDefaultsKey) private var apiKey = ""
@@ -338,7 +338,7 @@ private struct StationPin: View {
 struct GasSettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @AppStorage("fuel.type") private var fuelType: FuelType = .regular
-    @AppStorage("fuel.radiusKm") private var radiusKm = 5.0
+    @AppStorage("fuel.radiusKm") private var radiusKm = 10.0
     @AppStorage("fuel.fillLitres") private var fillLitres = 40.0
     @AppStorage("fuel.consumption") private var consumption = 10.0
     @AppStorage(GasStationService.keyDefaultsKey) private var apiKey = ""
